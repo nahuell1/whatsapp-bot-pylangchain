@@ -33,6 +33,17 @@ class SystemInfoFunction(FunctionBase):
                     "description": "Whether to include detailed information",
                     "default": False
                 }
+            },
+            command_info={
+                "usage": "!system_info [tipo]",
+                "examples": [
+                    "!system_info",
+                    "!system_info cpu",
+                    "!system_info memory"
+                ],
+                "parameter_mapping": {
+                    "info_type": "first_arg"  # Use first argument as info_type
+                }
             }
         )
     

@@ -41,6 +41,18 @@ class HomeAssistantFunction(FunctionBase):
                     "description": "Additional data to send with the service call",
                     "required": False
                 }
+            },
+            command_info={
+                "usage": "!home_assistant <acción> [entidad]",
+                "examples": [
+                    "!home_assistant turn_on light.living_room",
+                    "!home_assistant turn_off lights",
+                    "!home_assistant get_state sensor.temperature"
+                ],
+                "parameter_mapping": {
+                    "action": "first_arg",  # First argument as action
+                    "entity_id": "second_arg"  # Second argument as entity_id
+                }
             }
         )
         self.base_url = settings.HOME_ASSISTANT_URL

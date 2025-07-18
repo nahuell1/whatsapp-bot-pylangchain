@@ -38,6 +38,16 @@ class IPCameraFunction(FunctionBase):
                     "description": "Response format (base64, url, or description)",
                     "default": "description"
                 }
+            },
+            command_info={
+                "usage": "!ip_camera [nombre]",
+                "examples": [
+                    "!ip_camera",
+                    "!ip_camera sala"
+                ],
+                "parameter_mapping": {
+                    "camera_name": "first_arg"  # First argument as camera name
+                }
             }
         )
         self.default_camera_url = settings.IP_CAMERA_URL

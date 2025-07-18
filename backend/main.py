@@ -144,17 +144,69 @@ async def process_message(request: MessageRequest):
 
 @app.get("/functions")
 async def get_functions():
-    """Get list of available functions."""
-    return {
-        "functions": [
-            {
-                "name": func.name,
-                "description": func.description,
-                "parameters": func.parameters
-            }
-            for func in app.state.function_manager.functions.values()
-        ]
-    }
+    """Get list of available functions with their metadata."""
+    try:
+        functions_data = {}
+        for func in app.state.function_manager.functions.values():
+            functions_data[func.name] = func.get_command_metadata()
+        
+        return {
+            "functions": functions_data,
+            "count": len(functions_data)
+        }
+    except Exception as e:
+        logger.error(f"Error getting functions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting functions: {str(e)}")
+
+
+@app.post("/execute-function")
+async def execute_function_direct(request: dict):
+    """Execute a function directly without AI inference."""
+    try:
+        function_name = request.get("function_name")
+        parameters = request.get("parameters", {})
+        user_context = request.get("user_context", {})
+        
+        if not function_name:
+            raise HTTPException(status_code=400, detail="function_name is required")
+        
+        logger.info(f"Executing function directly: {function_name} with parameters: {parameters}")
+        
+        # Check if function exists
+        if function_name not in app.state.function_manager.functions:
+            available_functions = list(app.state.function_manager.functions.keys())
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Function '{function_name}' not found. Available functions: {available_functions}"
+            )
+        
+        # Execute function
+        start_time = asyncio.get_event_loop().time()
+        function_result = await app.state.function_manager.execute_function(
+            function_name,
+            parameters
+        )
+        execution_time = asyncio.get_event_loop().time() - start_time
+        
+        return {
+            "success": True,
+            "result": function_result.get("response", "Function executed successfully"),
+            "function_name": function_name,
+            "parameters": parameters,
+            "execution_time": round(execution_time, 3),
+            "metadata": function_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing function directly: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "function_name": request.get("function_name"),
+            "parameters": request.get("parameters", {})
+        }
 
 
 if __name__ == "__main__":

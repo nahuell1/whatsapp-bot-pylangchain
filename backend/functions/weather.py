@@ -35,6 +35,17 @@ class WeatherFunction(FunctionBase):
                     "description": "Temperature units (celsius or fahrenheit)",
                     "default": "celsius"
                 }
+            },
+            command_info={
+                "usage": "!weather <ubicación>",
+                "examples": [
+                    "!weather Don Torcuato",
+                    "!weather Buenos Aires",
+                    "!weather Madrid"
+                ],
+                "parameter_mapping": {
+                    "location": "join_args"  # Join all arguments as location
+                }
             }
         )
         self.geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"

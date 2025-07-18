@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class FunctionBase(ABC):
     """Base class for all bot functions."""
     
-    def __init__(self, name: str, description: str, parameters: Dict[str, Any]):
+    def __init__(self, name: str, description: str, parameters: Dict[str, Any], command_info: Dict[str, Any] = None):
         """
         Initialize a function.
         
@@ -20,11 +20,27 @@ class FunctionBase(ABC):
             name: Function name
             description: Function description
             parameters: Function parameters schema
+            command_info: Command-specific information for direct execution
         """
         self.name = name
         self.description = description
         self.parameters = parameters
+        self.command_info = command_info or {}
         logger.info(f"Initialized function: {name}")
+    
+    def get_command_metadata(self) -> Dict[str, Any]:
+        """
+        Get command metadata for direct execution.
+        
+        Returns:
+            Command metadata including usage examples and parameter mapping
+        """
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.parameters,
+            "command_info": self.command_info
+        }
     
     @abstractmethod
     async def execute(self, **kwargs) -> Dict[str, Any]:

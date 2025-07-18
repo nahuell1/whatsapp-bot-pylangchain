@@ -22,7 +22,14 @@ class NewsFunction(FunctionBase):
         super().__init__(
             name="news",
             description="Get the latest news from Reddit Argentina",
-            parameters={}  # No parameters needed
+            parameters={},  # No parameters needed
+            command_info={
+                "usage": "!news",
+                "examples": [
+                    "!news"
+                ],
+                "parameter_mapping": {}  # No parameters needed
+            }
         )
         self.rss_url = "https://www.reddit.com/r/argentina/.rss"
     

@@ -6,12 +6,14 @@
 const axios = require('axios');
 const logger = require('./utils/logger');
 const MessageProcessor = require('./message-processor');
+const CommandHandler = require('./command-handler');
 const config = require('./config');
 
 class WhatsAppBot {
     constructor(client) {
         this.client = client;
         this.messageProcessor = new MessageProcessor();
+        this.commandHandler = new CommandHandler();
         this.setupEventHandlers();
         logger.info('WhatsApp Bot initialized');
     }
@@ -59,7 +61,7 @@ class WhatsAppBot {
         // Get message info
         const messageInfo = await this.messageProcessor.extractMessageInfo(message);
         
-        logger.info(`Received message from ${messageInfo.userId}: ${messageInfo.message.substring(0, 100)}...`);
+        logger.info(`Received message from ${messageInfo.user_id}: ${messageInfo.message.substring(0, 100)}...`);
         logger.debug('Message info:', messageInfo);
 
         // Check message length
@@ -75,7 +77,38 @@ class WhatsAppBot {
         }
 
         try {
-            // Process message with backend
+            // Check if message is a direct command
+            if (this.commandHandler.isCommand(messageInfo.message)) {
+                logger.info('Processing direct command:', messageInfo.message);
+                
+                // Handle special help command
+                if (messageInfo.message.toLowerCase().startsWith('!help')) {
+                    const helpArgs = messageInfo.message.substring(5).trim().split(/\s+/).filter(arg => arg.length > 0);
+                    const helpResponse = await this.commandHandler.handleHelpCommand(helpArgs);
+                    await message.reply(helpResponse);
+                    
+                    const processingTime = Date.now() - startTime;
+                    logger.info(`Help command processed in ${processingTime}ms`);
+                    return;
+                }
+                
+                // Execute direct command
+                const commandResult = await this.commandHandler.executeCommand(messageInfo.message, messageInfo.user_context);
+                
+                if (commandResult.success) {
+                    await message.reply(commandResult.message);
+                    logger.info(`Command executed successfully: ${commandResult.metadata?.command}`);
+                } else {
+                    await message.reply(commandResult.message);
+                    logger.warn(`Command execution failed: ${commandResult.message}`);
+                }
+                
+                const processingTime = Date.now() - startTime;
+                logger.info(`Command processed in ${processingTime}ms`);
+                return;
+            }
+            
+            // Process message with backend (AI inference)
             const response = await this.sendToBackend(messageInfo);
             
             // Send response
