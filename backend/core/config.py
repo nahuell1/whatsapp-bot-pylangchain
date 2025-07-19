@@ -41,6 +41,7 @@ class Settings(BaseSettings):
         """Pydantic configuration."""
         env_file = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
         case_sensitive = True
+        extra = "allow"  # Allow extra environment variables for dynamic camera configs
 
 
 # Global settings instance

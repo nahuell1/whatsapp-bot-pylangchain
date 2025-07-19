@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
     await app.state.function_manager.load_functions()
     logger.info(f"Loaded {len(app.state.function_manager.functions)} functions")
     
+    # Update intent detector with available functions
+    await app.state.intent_detector.update_functions(app.state.function_manager.functions)
+    
     yield
     
     # Shutdown
@@ -119,7 +122,7 @@ async def process_message(request: MessageRequest):
                 message=function_result.get("response", "Function executed successfully"),
                 intent="function_call",
                 function_name=intent_result.function_name,
-                metadata=function_result
+                metadata=function_result  # Pass complete function_result as metadata
             )
         else:
             # Handle as chat

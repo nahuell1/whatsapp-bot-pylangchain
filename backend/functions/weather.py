@@ -6,11 +6,12 @@ import httpx
 import logging
 from typing import Dict, Any
 
-from functions.base import FunctionBase
+from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
 
+@bot_function("weather")
 class WeatherFunction(FunctionBase):
     """Get weather information for a location."""
     
@@ -46,7 +47,17 @@ class WeatherFunction(FunctionBase):
                 "parameter_mapping": {
                     "location": "join_args"  # Join all arguments as location
                 }
-            }
+            },
+            intent_examples=[
+                {
+                    "message": "what's the weather in Madrid",
+                    "parameters": {"location": "Madrid"}
+                },
+                {
+                    "message": "weather forecast for Buenos Aires", 
+                    "parameters": {"location": "Buenos Aires", "days": 3}
+                }
+            ]
         )
         self.geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
         self.weather_url = "https://api.open-meteo.com/v1/forecast"

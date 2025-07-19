@@ -96,8 +96,26 @@ class WhatsAppBot {
                 const commandResult = await this.commandHandler.executeCommand(messageInfo.message, messageInfo.user_context);
                 
                 if (commandResult.success) {
-                    await message.reply(commandResult.message);
-                    logger.info(`Command executed successfully: ${commandResult.metadata?.command}`);
+                    // Check if there are images to send
+                    if (commandResult.image_data && commandResult.image_data.length > 0) {
+                        logger.info(`Sending ${commandResult.image_data.length} image(s) from command`);
+                        
+                        // Send text response first
+                        await message.reply(commandResult.message);
+                        
+                        // Send each image
+                        for (const imageCapture of commandResult.image_data) {
+                            if (imageCapture.image_data) {
+                                await this.sendImageFromBase64(message, imageCapture.image_data);
+                                logger.debug(`Sent image from camera: ${imageCapture.camera_name}`);
+                            }
+                        }
+                        
+                        logger.info(`Command with ${commandResult.image_data.length} image(s) executed successfully: ${commandResult.metadata?.command}`);
+                    } else {
+                        await message.reply(commandResult.message);
+                        logger.info(`Command executed successfully: ${commandResult.metadata?.command}`);
+                    }
                 } else {
                     await message.reply(commandResult.message);
                     logger.warn(`Command execution failed: ${commandResult.message}`);
@@ -181,8 +199,53 @@ class WhatsAppBot {
 
             // Handle media responses (e.g., camera images)
             if (response.metadata && response.metadata.image_base64) {
+                logger.debug('Found image in response.metadata.image_base64');
                 await this.sendImageFromBase64(message, response.metadata.image_base64);
             }
+            
+            // Handle camera function responses with image_data
+            if (response.result && response.result.image_data) {
+                logger.debug('Found image in response.result.image_data');
+                await this.sendImageFromBase64(message, response.result.image_data);
+            }
+            
+            // Handle allcameras responses with successful captures - CHECK BOTH LOCATIONS
+            let successfulCaptures = null;
+            
+            // First check metadata.result.successful_captures (for inference)
+            if (response.metadata && response.metadata.result && response.metadata.result.successful_captures) {
+                successfulCaptures = response.metadata.result.successful_captures;
+                logger.debug(`Found ${successfulCaptures.length} successful captures in metadata.result`);
+            }
+            // Then check result.successful_captures (for direct commands)
+            else if (response.result && response.result.successful_captures) {
+                successfulCaptures = response.result.successful_captures;
+                logger.debug(`Found ${successfulCaptures.length} successful captures in result`);
+            }
+            
+            // Process the captures if found
+            if (successfulCaptures) {
+                for (const capture of successfulCaptures) {
+                    if (capture.image_data) {
+                        logger.debug(`Sending image for camera: ${capture.camera_name} (${capture.image_data.length} bytes)`);
+                        await this.sendImageFromBase64(message, capture.image_data);
+                        // Small delay between images to avoid rate limiting
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    } else {
+                        logger.debug(`No image_data found for camera: ${capture.camera_name}`);
+                    }
+                }
+            }
+            
+            // Debug response structure
+            logger.debug('Response structure debug:', {
+                hasMetadata: !!response.metadata,
+                hasMetadataResult: !!(response.metadata && response.metadata.result),
+                hasMetadataResultCaptures: !!(response.metadata && response.metadata.result && response.metadata.result.successful_captures),
+                hasResult: !!response.result,
+                hasResultCaptures: !!(response.result && response.result.successful_captures),
+                metadataKeys: response.metadata ? Object.keys(response.metadata) : 'no metadata'
+            });
 
         } catch (error) {
             logger.error('Error sending response:', error);
@@ -192,13 +255,16 @@ class WhatsAppBot {
 
     async sendImageFromBase64(message, base64Image) {
         try {
+            logger.debug('Attempting to send image from base64');
             const { MessageMedia } = require('whatsapp-web.js');
             
             // Create media from base64
             const media = new MessageMedia('image/jpeg', base64Image);
+            logger.debug(`Created MessageMedia with ${base64Image.length} chars of base64 data`);
             
             // Send image
             await message.reply(media);
+            logger.info('Image sent successfully');
             
         } catch (error) {
             logger.error('Error sending image:', error);

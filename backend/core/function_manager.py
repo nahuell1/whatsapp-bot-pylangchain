@@ -9,6 +9,7 @@ from typing import Dict, Any, List
 import asyncio
 
 from .config import settings
+from functions.base import get_registered_functions
 
 logger = logging.getLogger(__name__)
 
@@ -28,25 +29,54 @@ class FunctionManager:
         if not os.path.exists(self.functions_dir):
             logger.warning(f"Functions directory does not exist: {self.functions_dir}")
             return
+
+        # First, import all function modules to trigger decorators
+        await self._import_all_modules()
         
-        # Get all Python files in the functions directory
-        function_files = [
-            f for f in os.listdir(self.functions_dir)
-            if f.endswith('.py') and not f.startswith('__') and f != 'base.py'
-        ]
-        
-        logger.info(f"Found {len(function_files)} function files")
-        
-        for file_name in function_files:
-            try:
-                await self._load_function_from_file(file_name)
-            except Exception as e:
-                logger.error(f"Failed to load function from {file_name}: {str(e)}")
+        # Then instantiate all registered functions
+        await self._instantiate_registered_functions()
         
         logger.info(f"Successfully loaded {len(self.functions)} functions")
-    
+
+    async def _import_all_modules(self):
+        """Import all Python modules in the functions directory."""
+        for file_name in os.listdir(self.functions_dir):
+            if file_name.endswith(".py") and not file_name.startswith("_"):
+                try:
+                    await self._import_module(file_name)
+                except Exception as e:
+                    logger.error(f"Failed to import module {file_name}: {str(e)}")
+
+    async def _import_module(self, file_name: str):
+        """Import a single Python module."""
+        file_path = os.path.join(self.functions_dir, file_name)
+        module_name = f"functions.{file_name[:-3]}"  # Remove .py extension
+        
+        # Load module dynamically
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        logger.debug(f"Imported module: {module_name}")
+
+    async def _instantiate_registered_functions(self):
+        """Instantiate all registered functions."""
+        registered_functions = get_registered_functions()
+        
+        for function_name, function_class in registered_functions.items():
+            try:
+                # Instantiate the function
+                function_instance = function_class()
+                self.functions[function_instance.name] = function_instance
+                logger.info(f"Loaded function: {function_instance.name}")
+            except Exception as e:
+                logger.error(f"Failed to instantiate function {function_name} ({function_class.__name__}): {str(e)}")
+
     async def _load_function_from_file(self, file_name: str):
-        """Load a function from a Python file."""
+        """
+        Legacy method for loading functions - kept for backward compatibility.
+        Use the new decorator-based system instead.
+        """
+        logger.warning("_load_function_from_file is deprecated. Use @bot_function decorator instead.")
         file_path = os.path.join(self.functions_dir, file_name)
         module_name = file_name[:-3]  # Remove .py extension
         
@@ -55,7 +85,7 @@ class FunctionManager:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         
-        # Find function classes in the module
+        # Find function classes in the module using the old method
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
             if (isinstance(attr, type) and 
@@ -67,7 +97,7 @@ class FunctionManager:
                 self.functions[function_instance.name] = function_instance
                 logger.info(f"Loaded function: {function_instance.name}")
                 break
-    
+
     async def execute_function(self, function_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a function with given parameters.
@@ -119,8 +149,20 @@ class FunctionManager:
             for func in self.functions.values()
         ]
     
+    def get_function_metadata(self) -> List[Dict[str, Any]]:
+        """Get command metadata for all loaded functions."""
+        return [
+            func.get_command_metadata()
+            for func in self.functions.values()
+        ]
+    
     async def reload_functions(self):
         """Reload all functions from the functions directory."""
         logger.info("Reloading functions...")
         self.functions.clear()
+        
+        # Clear the function registry to avoid stale registrations
+        from functions.base import clear_function_registry
+        clear_function_registry()
+        
         await self.load_functions()

@@ -8,12 +8,13 @@ import logging
 from typing import Dict, Any
 from io import BytesIO
 
-from functions.base import FunctionBase
+from functions.base import FunctionBase, bot_function
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
+@bot_function("ip_camera")
 class IPCameraFunction(FunctionBase):
     """Capture and send IP camera snapshots."""
     

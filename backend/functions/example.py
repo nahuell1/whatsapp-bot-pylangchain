@@ -7,11 +7,12 @@ import logging
 from typing import Dict, Any
 from datetime import datetime
 
-from functions.base import FunctionBase
+from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
 
+@bot_function("example")
 class ExampleFunction(FunctionBase):
     """Example function demonstrating the function structure."""
     
@@ -36,7 +37,17 @@ class ExampleFunction(FunctionBase):
                     "description": "Number of times to repeat the message",
                     "default": 1
                 }
-            }
+            },
+            intent_examples=[
+                {
+                    "message": "echo hello world",
+                    "parameters": {"message": "hello world"}
+                },
+                {
+                    "message": "repeat TESTING in uppercase 3 times",
+                    "parameters": {"message": "TESTING", "uppercase": True, "count": 3}
+                }
+            ]
         )
     
     async def execute(self, **kwargs) -> Dict[str, Any]:

@@ -6,12 +6,13 @@ import httpx
 import logging
 from typing import Dict, Any
 
-from functions.base import FunctionBase
+from functions.base import FunctionBase, bot_function
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
+@bot_function("home_assistant")
 class HomeAssistantFunction(FunctionBase):
     """Trigger Home Assistant automations and control entities."""
     
@@ -53,7 +54,17 @@ class HomeAssistantFunction(FunctionBase):
                     "action": "first_arg",  # First argument as action
                     "entity_id": "second_arg"  # Second argument as entity_id
                 }
-            }
+            },
+            intent_examples=[
+                {
+                    "message": "turn on the office lights",
+                    "parameters": {"action": "turn_on", "entity_id": "light.office"}
+                },
+                {
+                    "message": "activate scene office_on", 
+                    "parameters": {"action": "turn_on", "entity_id": "scene.office_on"}
+                }
+            ]
         )
         self.base_url = settings.HOME_ASSISTANT_URL
         self.token = settings.HOME_ASSISTANT_TOKEN

@@ -9,11 +9,12 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 import re
 
-from functions.base import FunctionBase
+from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
 
+@bot_function("news")
 class NewsFunction(FunctionBase):
     """Get latest news from Reddit Argentina RSS feed."""
     
@@ -29,7 +30,17 @@ class NewsFunction(FunctionBase):
                     "!news"
                 ],
                 "parameter_mapping": {}  # No parameters needed
-            }
+            },
+            intent_examples=[
+                {
+                    "message": "show me the latest news",
+                    "parameters": {}
+                },
+                {
+                    "message": "what's happening in Argentina",
+                    "parameters": {}
+                }
+            ]
         )
         self.rss_url = "https://www.reddit.com/r/argentina/.rss"
     

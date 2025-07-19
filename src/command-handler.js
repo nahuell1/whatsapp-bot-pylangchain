@@ -25,14 +25,23 @@ class CommandHandler {
             if (response.data && response.data.functions) {
                 this.functionMetadata = response.data.functions;
                 
-                // Build command map
+                // Build command map including aliases
                 this.availableFunctions.clear();
                 for (const [functionName, metadata] of Object.entries(this.functionMetadata)) {
+                    // Register main function name
                     this.availableFunctions.set(functionName, metadata);
                     logger.debug(`Registered command: !${functionName}`);
+                    
+                    // Register aliases if they exist
+                    if (metadata.command_info && metadata.command_info.aliases) {
+                        for (const alias of metadata.command_info.aliases) {
+                            this.availableFunctions.set(alias, metadata);
+                            logger.debug(`Registered alias: !${alias} -> ${functionName}`);
+                        }
+                    }
                 }
                 
-                logger.info(`Loaded ${this.availableFunctions.size} available commands`);
+                logger.info(`Loaded ${Object.keys(this.functionMetadata).length} functions with ${this.availableFunctions.size} total commands (including aliases)`);
             }
         } catch (error) {
             logger.error('Failed to load available functions:', error);
@@ -80,23 +89,42 @@ class CommandHandler {
             // Prepare parameters based on the function and arguments
             const parameters = this.prepareParameters(command, args);
             
+            // Get the actual function name (in case command is an alias)
+            const functionMetadata = this.availableFunctions.get(command);
+            const actualFunctionName = functionMetadata.name;
+            
             // Execute the function directly via backend
             const response = await axios.post(`${this.backendUrl}/execute-function`, {
-                function_name: command,
+                function_name: actualFunctionName,
                 parameters: parameters,
                 user_context: userContext
             });
 
             if (response.data.success) {
-                return {
+                const result = {
                     success: true,
                     message: response.data.result,
                     metadata: {
                         command: command,
+                        function_name: actualFunctionName,
                         args: args,
                         executionTime: response.data.execution_time
                     }
                 };
+                
+                // Check if there are images in the response
+                // Images are nested in metadata.result.successful_captures
+                if (response.data.metadata && response.data.metadata.result && response.data.metadata.result.successful_captures) {
+                    const successfulCaptures = response.data.metadata.result.successful_captures;
+                    const imagesWithData = successfulCaptures.filter(capture => capture.image_data);
+                    
+                    if (imagesWithData.length > 0) {
+                        result.image_data = imagesWithData;
+                        logger.debug(`Found ${imagesWithData.length} images in command response`);
+                    }
+                }
+                
+                return result;
             } else {
                 return {
                     success: false,

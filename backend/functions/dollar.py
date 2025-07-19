@@ -7,11 +7,12 @@ import logging
 from typing import Dict, Any
 from datetime import datetime
 
-from functions.base import FunctionBase
+from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
 
+@bot_function("dollar")
 class DollarFunction(FunctionBase):
     """Get current USD exchange rates from DolarAPI."""
     
@@ -29,7 +30,17 @@ class DollarFunction(FunctionBase):
                 ],
                 "parameter_mapping": {},  # No parameters needed
                 "aliases": ["dolar"]
-            }
+            },
+            intent_examples=[
+                {
+                    "message": "what's the dollar price today",
+                    "parameters": {}
+                },
+                {
+                    "message": "current USD exchange rate",
+                    "parameters": {}
+                }
+            ]
         )
         self.api_url = "https://dolarapi.com/v1/dolares"
     

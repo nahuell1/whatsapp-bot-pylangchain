@@ -9,11 +9,12 @@ import logging
 from typing import Dict, Any
 from datetime import datetime
 
-from functions.base import FunctionBase
+from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
 
+@bot_function("system_info")
 class SystemInfoFunction(FunctionBase):
     """Get system information."""
     
@@ -44,7 +45,17 @@ class SystemInfoFunction(FunctionBase):
                 "parameter_mapping": {
                     "info_type": "first_arg"  # Use first argument as info_type
                 }
-            }
+            },
+            intent_examples=[
+                {
+                    "message": "show system information",
+                    "parameters": {}
+                },
+                {
+                    "message": "check CPU usage",
+                    "parameters": {"info_type": "cpu"}
+                }
+            ]
         )
     
     async def execute(self, **kwargs) -> Dict[str, Any]:

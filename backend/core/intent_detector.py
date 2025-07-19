@@ -35,36 +35,28 @@ class IntentDetector:
             api_key=settings.OPENAI_API_KEY
         )
         
-        # System prompt for intent detection
-        self.system_prompt = """You are an intent detection system for a WhatsApp bot. 
-Your task is to analyze user messages and determine if they are:
-1. "function_call" - User wants to execute a specific function
-2. "chat" - User wants to have a conversation
+        # System prompt for intent detection (will be updated dynamically)
+        self.system_prompt = self._build_base_prompt()
+    
+    def _build_base_prompt(self, functions_text: str = "") -> str:
+        """Build the system prompt with optional functions list."""
+        base_prompt = f"""Analyze user messages for intent:
+- "function_call": execute specific function
+- "chat": conversation
 
-Available functions:
-- weather: Get weather information for a location
-- home_assistant: Trigger Home Assistant automations/actions
-- ip_camera: Get camera snapshots
-- system_info: Get system information
-- news: Get latest news from Reddit Argentina (no parameters needed)
+{functions_text}
 
-For function calls, extract the function name and parameters.
+MANDATORY JSON FORMAT:
+{{"intent": "function_call"|"chat", "function_name": "exact_function_name", "parameters": {{}}, "confidence": 0.0-1.0}}
 
-Respond with a JSON object containing:
-{
-    "intent": "function_call" or "chat",
-    "function_name": "function_name" (if intent is function_call),
-    "parameters": {...} (if intent is function_call),
-    "confidence": 0.0-1.0
-}
+⚠️ CRITICAL RULES:
+1. intent field: ONLY "function_call" or "chat" - NEVER use function names here
+2. function_name field: ONLY exact names from Functions list above
+3. parameters field: Use EXACT parameter names from function specifications
 
-Examples:
-- "What's the weather like?" -> {"intent": "function_call", "function_name": "weather", "parameters": {"location": "user_location"}, "confidence": 0.9}
-- "Hello, how are you?" -> {"intent": "chat", "confidence": 0.95}
-- "Turn on the lights" -> {"intent": "function_call", "function_name": "home_assistant", "parameters": {"action": "turn_on_lights"}, "confidence": 0.85}
-- "Dame las últimas noticias" -> {"intent": "function_call", "function_name": "news", "parameters": {}, "confidence": 0.9}
-- "Qué está pasando en Argentina?" -> {"intent": "function_call", "function_name": "news", "parameters": {}, "confidence": 0.8}
-"""
+For general conversation -> {{"intent":"chat","confidence":0.95}}"""
+        
+        return base_prompt
     
     async def detect_intent(self, message: str, user_id: str) -> IntentResult:
         """
@@ -117,40 +109,52 @@ Examples:
             return IntentResult(intent="chat", confidence=0.0)
     
     async def update_functions(self, functions: Dict[str, Any]):
-        """
-        Update the available functions in the system prompt.
+        """Update available functions in system prompt."""
+        if not functions:
+            self.system_prompt = self._build_base_prompt()
+            return
+            
+        # Create detailed function list with parameters
+        func_list = []
+        examples_list = []
         
-        Args:
-            functions: Dictionary of available functions
-        """
-        function_descriptions = []
         for name, func in functions.items():
-            function_descriptions.append(f"- {name}: {func.description}")
+            # Get short description, limit to 50 chars
+            desc = func.description[:50] + "..." if len(func.description) > 50 else func.description
+            
+            # Add parameter information for better inference
+            params_info = ""
+            if hasattr(func, 'parameters') and func.parameters:
+                required_params = []
+                optional_params = []
+                
+                for param_name, param_info in func.parameters.items():
+                    param_desc = param_info.get('description', '').split('.')[0]  # First sentence only
+                    if param_info.get('required', False):
+                        required_params.append(f"{param_name}: {param_desc}")
+                    else:
+                        optional_params.append(f"{param_name}: {param_desc}")
+                
+                # Build compact parameter info
+                if required_params:
+                    params_info = f" (required: {', '.join(required_params)})"
+                    if optional_params and len(optional_params) <= 2:  # Limit optional params
+                        params_info += f" (optional: {', '.join(optional_params[:2])})"
+            
+            func_list.append(f"- {name}: {desc}{params_info}")
+            
+            # Add intent examples if available
+            if hasattr(func, 'intent_examples') and func.intent_examples:
+                for example in func.intent_examples[:2]:  # Limit to 2 examples per function
+                    message = example.get('message', '')
+                    parameters = example.get('parameters', {})
+                    examples_list.append(f'"{message}" -> {{"intent":"function_call","function_name":"{name}","parameters":{parameters},"confidence":0.9}}')
         
-        functions_text = "\n".join(function_descriptions)
+        # Build functions text with examples
+        functions_text = f"Functions:\n" + "\n".join(func_list)
+        if examples_list:
+            functions_text += f"\n\nExamples:\n- " + "\n- ".join(examples_list)
         
-        self.system_prompt = f"""You are an intent detection system for a WhatsApp bot. 
-Your task is to analyze user messages and determine if they are:
-1. "function_call" - User wants to execute a specific function
-2. "chat" - User wants to have a conversation
-
-Available functions:
-{functions_text}
-
-For function calls, extract the function name and parameters.
-
-Respond with a JSON object containing:
-{{
-    "intent": "function_call" or "chat",
-    "function_name": "function_name" (if intent is function_call),
-    "parameters": {{...}} (if intent is function_call),
-    "confidence": 0.0-1.0
-}}
-
-Examples:
-- "What's the weather like?" -> {{"intent": "function_call", "function_name": "weather", "parameters": {{"location": "user_location"}}, "confidence": 0.9}}
-- "Hello, how are you?" -> {{"intent": "chat", "confidence": 0.95}}
-- "Turn on the lights" -> {{"intent": "function_call", "function_name": "home_assistant", "parameters": {{"action": "turn_on_lights"}}, "confidence": 0.85}}
-"""
+        self.system_prompt = self._build_base_prompt(functions_text)
         
-        logger.info("Updated system prompt with new functions")
+        logger.info(f"Updated system prompt with {len(functions)} functions and {len(examples_list)} examples")
