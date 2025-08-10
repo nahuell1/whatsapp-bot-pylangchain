@@ -13,25 +13,31 @@ async function main() {
     logger.info('Starting WhatsApp Bot Frontend...');
     
     try {
+        const chromePath = process.env.CHROME_PATH;
+    if (chromePath) logger.info(`Usando navegador: ${chromePath}`);
+        // Build puppeteer options
+        const puppeteerOpts = {
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu'
+            ]
+        };
+        if (chromePath) {
+            puppeteerOpts.executablePath = chromePath; // only set if provided
+        }
         // Initialize WhatsApp client
         const client = new Client({
             authStrategy: new LocalAuth({
                 clientId: 'whatsapp-bot',
                 dataPath: process.env.WHATSAPP_SESSION_PATH || './.wwebjs_auth'
             }),
-            puppeteer: {
-                headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--single-process',
-                    '--disable-gpu'
-                ]
-            }
+            puppeteer: puppeteerOpts
         });
 
         // Initialize bot

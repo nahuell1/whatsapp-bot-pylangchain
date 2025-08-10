@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: whatsapp-backend
+    env_file: .env
+    environment:
+      BACKEND_HOST: 0.0.0.0
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - whatsapp_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: whatsapp-frontend
+    env_file: .env
+    environment:
+      BACKEND_URL: http://backend:8000
+      WHATSAPP_SESSION_PATH: /app/.wwebjs_auth
+      CHROME_PATH: /usr/bin/chromium
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - whatsapp_session:/app/.wwebjs_auth
+      - whatsapp_cache:/app/.wwebjs_cache
+    restart: unless-stopped
+    networks:
+      - whatsapp_net
+
+volumes:
+  whatsapp_session:
+  whatsapp_cache:
+
+networks:
+  whatsapp_net:
+    driver: bridge

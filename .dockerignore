@@ -1,0 +1,18 @@
+# General
+.git
+.gitignore
+README.md
+QUICKSTART.md
+logs/*
+__pycache__
+*.pyc
+*.log
+venv
+node_modules
+tests
+.wwebjs_auth
+.wwebjs_cache
+.backend_pid
+.frontend_pid
+start.sh
+setup.sh

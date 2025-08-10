@@ -1,0 +1,32 @@
+## Frontend (Node + whatsapp-web.js) Dockerfile
+FROM node:20-bullseye-slim
+
+ENV NODE_ENV=production \
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_CACHE_DIR=/tmp/puppeteer \
+    WHATSAPP_SESSION_PATH=/app/.wwebjs_auth \
+    CHROME_PATH=/usr/bin/chromium
+
+WORKDIR /app
+
+# Install system dependencies required by Chromium (puppeteer)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates fonts-liberation libasound2 libatk1.0-0 libatk-bridge2.0-0 \
+    libc6 libdrm2 libxkbcommon0 libx11-xcb1 libxcomposite1 libxdamage1 libxext6 \
+    libxfixes3 libxrandr2 libgbm1 libgtk-3-0 libnss3 libxshmfence1 wget curl gnupg \
+    chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json ./
+# Copy lock file if present (build won't fail if absent)
+COPY package-lock.json* ./
+COPY .npmrc* ./
+RUN npm install --omit=dev && npm cache clean --force || (echo "npm install failed" && exit 1)
+
+COPY index.js ./
+COPY src ./src
+
+# Persist session + cache externally via volumes
+VOLUME ["/app/.wwebjs_auth", "/app/.wwebjs_cache"]
+
+CMD ["node", "index.js"]
