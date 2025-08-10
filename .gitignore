@@ -46,6 +46,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Google credentials (OAuth tokens)
+backend/credentials/
+
 # IDE
 .vscode/
 .idea/

@@ -14,6 +14,8 @@ class WhatsAppBot {
         this.client = client;
         this.messageProcessor = new MessageProcessor();
         this.commandHandler = new CommandHandler();
+    // Track processed message IDs to avoid duplicates
+    this.processedMessageIds = new Set();
         this.setupEventHandlers();
         logger.info('WhatsApp Bot initialized');
     }
@@ -60,9 +62,34 @@ class WhatsAppBot {
 
         // Get message info
         const messageInfo = await this.messageProcessor.extractMessageInfo(message);
+        // Dedupe: skip if already processed
+        if (messageInfo.message_id) {
+            if (this.processedMessageIds.has(messageInfo.message_id)) {
+                logger.debug(`Skipping duplicate message id=${messageInfo.message_id}`);
+                return;
+            }
+            this.processedMessageIds.add(messageInfo.message_id);
+            // Keep the set from growing unbounded
+            if (this.processedMessageIds.size > 1000) {
+                const first = this.processedMessageIds.values().next().value;
+                this.processedMessageIds.delete(first);
+            }
+        }
+        
+        // Access control: only reply to allowed users if list configured
+        if (config.ALLOWED_USER_IDS.length > 0 && !config.ALLOWED_USER_IDS.includes(messageInfo.user_id)) {
+            logger.info(`Ignoring message from unauthorized user ${messageInfo.user_id}`);
+            return; // silently ignore
+        }
         
         logger.info(`Received message from ${messageInfo.user_id}: ${messageInfo.message.substring(0, 100)}...`);
         logger.debug('Message info:', messageInfo);
+
+        // Ignore empty or whitespace-only messages
+        if (!messageInfo.message || messageInfo.message.trim().length === 0) {
+            logger.debug('Ignoring empty message');
+            return;
+        }
 
         // Check message length
         if (messageInfo.message.length > config.MAX_MESSAGE_LENGTH) {

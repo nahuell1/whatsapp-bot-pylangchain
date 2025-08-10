@@ -41,6 +41,7 @@ class MessageProcessor {
                 message: message.body || '',
                 user_id: contact.id.user,
                 chat_id: chat.id._serialized,
+                message_id: message.id ? message.id._serialized : undefined,
                 timestamp: new Date(message.timestamp * 1000).toISOString(),
                 message_type: this.getMessageType(message)
             };

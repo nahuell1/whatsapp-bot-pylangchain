@@ -31,4 +31,10 @@ module.exports = {
     // Error handling
     MAX_RETRIES: parseInt(process.env.MAX_RETRIES) || 3,
     RETRY_DELAY: parseInt(process.env.RETRY_DELAY) || 1000,
+    
+    // Access control (comma separated user IDs / phone numbers without @c.us)
+    ALLOWED_USER_IDS: (process.env.ALLOWED_USER_IDS || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
 };

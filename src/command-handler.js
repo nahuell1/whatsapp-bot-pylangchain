@@ -123,6 +123,15 @@ class CommandHandler {
                         logger.debug(`Found ${imagesWithData.length} images in command response`);
                     }
                 }
+
+                // Single camera function (or any function returning single image_data)
+                if (!result.image_data && response.data.metadata && response.data.metadata.result && response.data.metadata.result.image_data) {
+                    const singleImage = response.data.metadata.result.image_data;
+                    if (singleImage) {
+                        result.image_data = [{ image_data: singleImage, camera_name: response.data.metadata.result.camera_name || 'camera' }];
+                        logger.debug('Added single camera image from metadata.result.image_data');
+                    }
+                }
                 
                 return result;
             } else {
@@ -143,13 +152,13 @@ class CommandHandler {
 
     prepareParameters(command, args) {
         const parameters = {};
-        
-        if (!this.functionMetadata || !this.functionMetadata[command]) {
-            logger.warn(`No metadata found for command: ${command}`);
+        // Allow lookup by alias: try functionMetadata first, else availableFunctions map
+        let meta = (this.functionMetadata && this.functionMetadata[command]) || this.availableFunctions.get(command);
+        if (!meta) {
+            logger.warn(`No metadata found for command or alias: ${command}`);
             return parameters;
         }
-        
-        const commandInfo = this.functionMetadata[command].command_info;
+        const commandInfo = meta.command_info || {};
         const parameterMapping = commandInfo.parameter_mapping || {};
         
         // Process parameter mapping
@@ -185,7 +194,7 @@ class CommandHandler {
         
         // If no specific mapping and there are arguments, try to infer
         if (Object.keys(parameters).length === 0 && args.length > 0) {
-            const functionParams = this.functionMetadata[command].parameters || {};
+            const functionParams = meta.parameters || {};
             const paramKeys = Object.keys(functionParams);
             
             if (paramKeys.length > 0) {
@@ -194,7 +203,7 @@ class CommandHandler {
             }
         }
         
-        return parameters;
+    return parameters;
     }
 
     getAvailableCommands() {

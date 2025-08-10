@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any
 
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain.schema import HumanMessage, SystemMessage, AIMessage
 
 from .config import settings
 
@@ -33,13 +33,14 @@ Guidelines:
 - Keep responses concise and appropriate for WhatsApp
 - If users ask about your capabilities, mention that you can help with weather, home automation, camera snapshots, and system information
 - Use emojis appropriately to make conversations more engaging
+- You can remember the last 5 interactions with each user
 - If you don't know something, admit it honestly
 """
         
         # Store conversation history (simple in-memory storage)
         self.conversation_history: Dict[str, list] = {}
     
-    async def handle_chat(self, message: str, user_id: str) -> str:
+    async def handle_chat(self, message: str, user_id: str, memory_store=None) -> str:
         """
         Handle a chat message and return a response.
         
@@ -74,9 +75,9 @@ Guidelines:
             response = await self.llm.agenerate([messages])
             reply = response.generations[0][0].text.strip()
             
-            # Update conversation history
-            history.append(current_message)
-            history.append(HumanMessage(content=reply))
+            # Update conversation history with correct roles
+            history.append(current_message)           # user message
+            history.append(AIMessage(content=reply))  # assistant reply
             
             # Keep only last 20 messages to prevent memory issues
             if len(history) > 20:
@@ -99,3 +100,35 @@ Guidelines:
     def get_history_length(self, user_id: str) -> int:
         """Get the length of conversation history for a user."""
         return len(self.conversation_history.get(user_id, []))
+
+    def record_function_interaction(self, user_id: str, user_message: str, function_name: str, parameters: dict, function_response: str):
+        """Record a function call interaction into the conversational history so the model can reference it later.
+
+        We store it as the user's original message followed by an assistant message summarizing the function call result.
+        """
+        if user_id not in self.conversation_history:
+            self.conversation_history[user_id] = []
+        history = self.conversation_history[user_id]
+
+        summary_header = f"(Function {function_name} executed)"
+        if parameters:
+            try:
+                # Short parameter summary
+                parts = []
+                for k, v in parameters.items():
+                    sval = str(v)
+                    if len(sval) > 30:
+                        sval = sval[:27] + '...'
+                    parts.append(f"{k}={sval}")
+                summary_header += " " + ", ".join(parts)
+            except Exception:  # pragma: no cover
+                pass
+
+        assistant_text = f"{summary_header}" if function_response else summary_header
+
+        history.append(HumanMessage(content=user_message))
+        history.append(AIMessage(content=assistant_text))
+        # Trim history
+        if len(history) > 40:
+            self.conversation_history[user_id] = history[-40:]
+        logger.debug(f"Recorded function interaction for {user_id}: {function_name}")

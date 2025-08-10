@@ -6,6 +6,9 @@ import platform
 import psutil
 import os
 import logging
+import subprocess
+import shutil
+from pathlib import Path
 from typing import Dict, Any
 from datetime import datetime
 
@@ -22,11 +25,11 @@ class SystemInfoFunction(FunctionBase):
         """Initialize the system info function."""
         super().__init__(
             name="system_info",
-            description="Get system information including CPU, memory, disk usage, and more",
+        description="Get system information including CPU, memory, disk usage, temperature (Raspberry Pi), and more",
             parameters={
                 "info_type": {
                     "type": "string",
-                    "description": "Type of information to get (all, cpu, memory, disk, network, processes)",
+            "description": "Type of information to get (all, cpu, memory, disk, network, processes, rpi)",
                     "default": "all"
                 },
                 "detailed": {
@@ -89,6 +92,8 @@ class SystemInfoFunction(FunctionBase):
                 system_info = await self._get_network_info(detailed)
             elif info_type == "processes":
                 system_info = await self._get_process_info(detailed)
+            elif info_type == "rpi":
+                system_info = await self._get_rpi_extras()
             else:
                 return self.format_error_response(f"Unknown info type: {info_type}")
             
@@ -103,7 +108,7 @@ class SystemInfoFunction(FunctionBase):
     
     async def _get_all_info(self, detailed: bool) -> Dict[str, Any]:
         """Get all system information."""
-        return {
+        all_info = {
             "timestamp": datetime.now().isoformat(),
             "system": await self._get_system_info(),
             "cpu": await self._get_cpu_info(detailed),
@@ -111,6 +116,16 @@ class SystemInfoFunction(FunctionBase):
             "disk": await self._get_disk_info(detailed),
             "network": await self._get_network_info(detailed) if detailed else {}
         }
+        # Raspberry Pi extras (best-effort) & container limits
+        try:
+            all_info["rpi"] = await self._get_rpi_extras()
+        except Exception:  # pragma: no cover - non-critical
+            all_info["rpi"] = {}
+        try:
+            all_info["container"] = self._get_container_limits()
+        except Exception:
+            all_info["container"] = {}
+        return all_info
     
     async def _get_system_info(self) -> Dict[str, Any]:
         """Get basic system information."""
@@ -138,6 +153,11 @@ class SystemInfoFunction(FunctionBase):
         
         if detailed:
             cpu_info["per_core_usage"] = psutil.cpu_percent(interval=1, percpu=True)
+
+        # Attempt to append temperature
+        temp_c = self._read_cpu_temperature()
+        if temp_c is not None:
+            cpu_info["temperature_c"] = temp_c
         
         return cpu_info
     
@@ -249,6 +269,146 @@ class SystemInfoFunction(FunctionBase):
         }
         
         return process_info
+
+    async def _get_rpi_extras(self) -> Dict[str, Any]:
+        """Get Raspberry Pi specific metrics (best-effort inside Docker)."""
+        rpi_info: Dict[str, Any] = {}
+        # Detect model
+        model_path = Path('/proc/device-tree/model')
+        if model_path.exists():
+            try:
+                rpi_info['model'] = model_path.read_text(errors='ignore').strip('\x00')
+            except Exception:
+                pass
+
+        # Temperature (reuse helper for consistency)
+        temp_c = self._read_cpu_temperature()
+        if temp_c is not None:
+            rpi_info['cpu_temperature_c'] = temp_c
+
+        # Throttling flags via vcgencmd (if available)
+        vcgencmd = shutil.which('vcgencmd') if 'shutil' in globals() else None
+        if vcgencmd is None:
+            import shutil as _shutil
+            vcgencmd = _shutil.which('vcgencmd')
+        if vcgencmd:
+            try:
+                raw = subprocess.check_output([vcgencmd, 'get_throttled'], text=True).strip()
+                rpi_info['throttled_raw'] = raw
+                # raw format: throttled=0x50005
+                if '=' in raw:
+                    hex_part = raw.split('=')[1]
+                    value = int(hex_part, 16)
+                    rpi_info['throttled_flags'] = self._decode_throttle_flags(value)
+            except Exception:  # pragma: no cover
+                pass
+
+        return rpi_info
+
+    def _decode_throttle_flags(self, value: int) -> Dict[str, bool]:
+        """Decode Raspberry Pi throttled flags per official docs."""
+        flags = {
+            'under_voltage_now': bool(value & (1 << 0)),
+            'freq_capped_now': bool(value & (1 << 1)),
+            'throttled_now': bool(value & (1 << 2)),
+            'under_voltage_past': bool(value & (1 << 16)),
+            'freq_capped_past': bool(value & (1 << 17)),
+            'throttled_past': bool(value & (1 << 18)),
+        }
+        return flags
+
+    def _read_cpu_temperature(self):
+        """Read CPU temperature in Celsius from common Raspberry Pi thermal zones."""
+        # Common path
+        candidates = [
+            '/sys/class/thermal/thermal_zone0/temp',
+            '/sys/class/hwmon/hwmon0/temp1_input'
+        ]
+        for path in candidates:
+            try:
+                if os.path.exists(path):
+                    with open(path, 'r') as f:
+                        raw = f.read().strip()
+                        if raw.isdigit():
+                            milli = int(raw)
+                            if milli > 1000:
+                                return milli / 1000.0
+                            return float(milli)
+                        # Sometimes "42000" etc.
+                        try:
+                            val = float(raw)
+                            if val > 1000:
+                                val = val / 1000.0
+                            return val
+                        except ValueError:
+                            continue
+            except Exception:  # pragma: no cover
+                continue
+        # Fallback to vcgencmd if available
+        try:
+            import shutil as _shutil
+            vcgencmd = _shutil.which('vcgencmd')
+            if vcgencmd:
+                out = subprocess.check_output([vcgencmd, 'measure_temp'], text=True).strip()
+                # format temp=42.0'C
+                if '=' in out:
+                    part = out.split('=')[1]
+                    if part.endswith("'C"):
+                        return float(part[:-2])
+        except Exception:  # pragma: no cover
+            pass
+        return None
+
+    def _get_container_limits(self) -> Dict[str, Any]:
+        """Get container (cgroup) resource limits if available."""
+        limits: Dict[str, Any] = {}
+        # Memory limits (cgroup v1 & v2)
+        mem_candidates = [
+            '/sys/fs/cgroup/memory.max',  # v2
+            '/sys/fs/cgroup/memory/memory.limit_in_bytes'  # v1
+        ]
+        for path in mem_candidates:
+            if os.path.exists(path):
+                try:
+                    raw = Path(path).read_text().strip()
+                    if raw not in ('max', ''):
+                        limits['memory_limit_bytes'] = int(raw)
+                        break
+                except Exception:
+                    continue
+        # CPU quota
+        cpu_quota_paths = [
+            ('/sys/fs/cgroup/cpu.max', 'v2'),
+            ('/sys/fs/cgroup/cpu/cpu.cfs_quota_us', 'v1_quota'),
+            ('/sys/fs/cgroup/cpu/cpu.cfs_period_us', 'v1_period')
+        ]
+        cpu_data = {}
+        for path, key in cpu_quota_paths:
+            if os.path.exists(path):
+                try:
+                    cpu_data[key] = Path(path).read_text().strip()
+                except Exception:
+                    pass
+        # Interpret v2 cpu.max format: "max 100000" or "200000 100000" (quota period)
+        if 'v2' in cpu_data:
+            parts = cpu_data['v2'].split()
+            if len(parts) == 2 and parts[0] != 'max':
+                try:
+                    quota = int(parts[0]); period = int(parts[1])
+                    limits['cpu_quota'] = quota
+                    limits['cpu_period'] = period
+                    limits['cpu_limit_cores_est'] = round(quota / period, 2) if period > 0 else None
+                except Exception:
+                    pass
+        else:
+            if 'v1_quota' in cpu_data and 'v1_period' in cpu_data:
+                try:
+                    quota = int(cpu_data['v1_quota']); period = int(cpu_data['v1_period'])
+                    if quota > 0 and period > 0:
+                        limits['cpu_limit_cores_est'] = round(quota / period, 2)
+                except Exception:
+                    pass
+        return limits
     
     def _format_system_info_response(self, system_info: Dict[str, Any], info_type: str) -> str:
         """Format system information response."""
@@ -268,6 +428,8 @@ class SystemInfoFunction(FunctionBase):
                 response += f"🧠 Cores: {cpu.get('physical_cores')} physical, {cpu.get('total_cores')} total\n"
                 if cpu.get('current_frequency'):
                     response += f"⚡ Frequency: {cpu.get('current_frequency'):.0f} MHz\n"
+                if cpu.get('temperature_c') is not None:
+                    response += f"🌡️ CPU Temp: {cpu.get('temperature_c'):.1f}°C\n"
                 response += "\n"
                 
                 # Memory info
@@ -289,6 +451,21 @@ class SystemInfoFunction(FunctionBase):
                 response += f"🧠 Cores: {system_info.get('physical_cores')} physical, {system_info.get('total_cores')} total\n"
                 if system_info.get('current_frequency'):
                     response += f"⚡ Frequency: {system_info.get('current_frequency'):.0f} MHz\n"
+                if system_info.get('temperature_c') is not None:
+                    response += f"🌡️ CPU Temp: {system_info.get('temperature_c'):.1f}°C\n"
+            elif info_type == "rpi":
+                if system_info.get('model'):
+                    response += f"🍓 Model: {system_info.get('model')}\n"
+                if system_info.get('cpu_temperature_c') is not None:
+                    response += f"🌡️ CPU Temp: {system_info.get('cpu_temperature_c'):.1f}°C\n"
+                flags = system_info.get('throttled_flags') or {}
+                if flags:
+                    active = [k for k, v in flags.items() if v and k.endswith('_now')]
+                    past = [k for k, v in flags.items() if v and k.endswith('_past')]
+                    if active:
+                        response += f"⚠️ Throttle Now: {', '.join(active)}\n"
+                    if past:
+                        response += f"🕓 Throttle Past: {', '.join(past)}\n"
                 
             elif info_type == "memory":
                 total_gb = system_info.get("total", 0) / (1024**3)

@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     MAX_MESSAGE_LENGTH: int = 1000
     FUNCTION_TIMEOUT: int = 30
     
+    # Memory / Event Log Configuration
+    MEMORY_ENABLED: bool = True
+    MEMORY_MAX_EVENTS: int = 50
+    MEMORY_EVENTS_IN_CONTEXT: int = 10
+    MEMORY_TTL_DAYS: int = 7
+    REDIS_URL: Optional[str] = None  # e.g. redis://redis:6379/0
+    
     class Config:
         """Pydantic configuration."""
         env_file = os.path.join(os.path.dirname(__file__), "..", "..", ".env")

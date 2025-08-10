@@ -21,6 +21,7 @@ from core.config import settings
 from core.intent_detector import IntentDetector
 from core.function_manager import FunctionManager
 from core.chat_handler import ChatHandler
+from core.memory import build_memory_store
 from models.message import MessageRequest, MessageResponse
 
 # Load environment variables
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
     app.state.intent_detector = IntentDetector()
     app.state.function_manager = FunctionManager()
     app.state.chat_handler = ChatHandler()
+    app.state.memory = await build_memory_store(settings)
     
     # Load functions
     await app.state.function_manager.load_functions()
@@ -102,44 +104,72 @@ async def process_message(request: MessageRequest):
     """
     try:
         logger.info(f"Processing message: {request.message[:100]}...")
-        
+
         # Detect user intent
         intent_result = await app.state.intent_detector.detect_intent(
-            request.message, 
+            request.message,
             request.user_id
         )
-        
         logger.info(f"Detected intent: {intent_result.intent}")
-        
+
         if intent_result.intent == "function_call":
             # Execute function
             function_result = await app.state.function_manager.execute_function(
                 intent_result.function_name,
                 intent_result.parameters
             )
-            
+
             response = MessageResponse(
                 message=function_result.get("response", "Function executed successfully"),
                 intent="function_call",
                 function_name=intent_result.function_name,
                 metadata=function_result  # Pass complete function_result as metadata
             )
+
+            # Record event if success
+            if app.state.memory and 'error' not in function_result:
+                try:
+                    from datetime import datetime, timezone
+                    args_parts = []
+                    for k, v in (intent_result.parameters or {}).items():
+                        sval = str(v)
+                        if len(sval) > 40:
+                            sval = sval[:37] + '...'
+                        args_parts.append(f"{k}={sval}")
+                    args_repr = ", ".join(args_parts)
+                    line = f"[{datetime.now(timezone.utc).isoformat()}] executed function {intent_result.function_name} args=\"{args_repr}\""
+                    await app.state.memory.add_event(request.user_id, line)
+                except Exception as me:  # pragma: no cover
+                    logger.debug(f"Memory record failed: {me}")
+
+            # Also record interaction in chat history for continuity
+            try:
+                app.state.chat_handler.record_function_interaction(
+                    request.user_id,
+                    request.message,
+                    intent_result.function_name,
+                    intent_result.parameters or {},
+                    function_result.get("response", "")
+                )
+            except Exception as re:  # pragma: no cover
+                logger.debug(f"Failed to record function interaction: {re}")
         else:
             # Handle as chat
             chat_response = await app.state.chat_handler.handle_chat(
                 request.message,
-                request.user_id
+                request.user_id,
+                memory_store=app.state.memory
             )
-            
+
             response = MessageResponse(
                 message=chat_response,
                 intent="chat",
                 metadata={}
             )
-        
+
         logger.info(f"Response generated: {response.message[:100]}...")
         return response
-        
+
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
@@ -211,6 +241,17 @@ async def execute_function_direct(request: dict):
             "parameters": request.get("parameters", {})
         }
 
+
+@app.post("/reload-functions")
+async def reload_functions():
+    """Reload function modules and update intent detector."""
+    try:
+        await app.state.function_manager.reload_functions()
+        await app.state.intent_detector.update_functions(app.state.function_manager.functions)
+        return {"reloaded": True, "count": len(app.state.function_manager.functions)}
+    except Exception as e:
+        logger.error(f"Error reloading functions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(
