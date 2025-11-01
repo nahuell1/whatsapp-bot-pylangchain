@@ -1,22 +1,34 @@
-"""
-Weather function using OpenMeteo API.
+"""Weather function using OpenMeteo API.
+
+Provides current weather and forecast information for any location.
 """
 
-import httpx
 import logging
-from typing import Dict, Any
+from typing import Any, Dict, Optional
+
+import httpx
 
 from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
 
+FORECAST_DAYS_MIN = 1
+FORECAST_DAYS_MAX = 7
+DEFAULT_FORECAST_DAYS = 1
+DEFAULT_UNITS = "celsius"
+
+
 @bot_function("weather")
 class WeatherFunction(FunctionBase):
-    """Get weather information for a location."""
+    """Get weather information for a location using OpenMeteo API.
+    
+    Provides current weather conditions and multi-day forecasts with
+    temperature, precipitation, and weather conditions.
+    """
     
     def __init__(self):
-        """Initialize the weather function."""
+        """Initialize the weather function with API endpoints and parameters."""
         super().__init__(
             name="weather",
             description="Get current weather and forecast for a location",
@@ -28,13 +40,13 @@ class WeatherFunction(FunctionBase):
                 },
                 "days": {
                     "type": "integer",
-                    "description": "Number of forecast days (1-7)",
-                    "default": 1
+                    "description": f"Number of forecast days ({FORECAST_DAYS_MIN}-{FORECAST_DAYS_MAX})",
+                    "default": DEFAULT_FORECAST_DAYS
                 },
                 "units": {
                     "type": "string",
                     "description": "Temperature units (celsius or fahrenheit)",
-                    "default": "celsius"
+                    "default": DEFAULT_UNITS
                 }
             },
             command_info={
@@ -63,50 +75,63 @@ class WeatherFunction(FunctionBase):
         self.weather_url = "https://api.open-meteo.com/v1/forecast"
     
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        Execute the weather function.
+        """Execute the weather function.
         
         Args:
-            **kwargs: Function parameters
+            **kwargs: Function parameters (location, days, units)
             
         Returns:
-            Weather information
+            Dict containing weather data and formatted message
         """
         try:
-            # Validate parameters
             params = self.validate_parameters(**kwargs)
             location = params["location"]
-            days = params.get("days", 1)
-            units = params.get("units", "celsius")
+            days = params.get("days", DEFAULT_FORECAST_DAYS)
+            units = params.get("units", DEFAULT_UNITS)
             
-            logger.info(f"Getting weather for {location}")
+            logger.info("Getting weather for %s", location)
             
-            # Get coordinates for location
             coordinates = await self._get_coordinates(location)
             if not coordinates:
-                return self.format_error_response(f"Could not find location: {location}")
+                return self.format_error_response(
+                    f"Could not find location: {location}"
+                )
             
-            # Get weather data
-            weather_data = await self._get_weather_data(coordinates, days, units)
+            weather_data = await self._get_weather_data(
+                coordinates, days, units
+            )
             if not weather_data:
                 return self.format_error_response("Failed to get weather data")
             
-            # Format response
-            response_message = self._format_weather_response(weather_data, location)
+            response_message = self._format_weather_response(
+                weather_data, location
+            )
             
             return self.format_success_response(weather_data, response_message)
             
         except Exception as e:
-            logger.error(f"Error in weather function: {str(e)}")
+            logger.error("Error in weather function: %s", str(e))
             return self.format_error_response(str(e))
     
-    async def _get_coordinates(self, location: str) -> Dict[str, float]:
-        """Get coordinates for a location."""
+    async def _get_coordinates(self, location: str) -> Dict[str, Any]:
+        """Get geographic coordinates for a location name.
+        
+        Args:
+            location: Location name (city, address, etc.)
+            
+        Returns:
+            Dict with latitude, longitude, name, and country or empty dict
+        """
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     self.geocoding_url,
-                    params={"name": location, "count": 1, "language": "en", "format": "json"}
+                    params={
+                        "name": location,
+                        "count": 1,
+                        "language": "en",
+                        "format": "json"
+                    }
                 )
                 response.raise_for_status()
                 
@@ -121,11 +146,25 @@ class WeatherFunction(FunctionBase):
                     }
                 return {}
         except Exception as e:
-            logger.error(f"Error getting coordinates: {str(e)}")
+            logger.error("Error getting coordinates: %s", str(e))
             return {}
     
-    async def _get_weather_data(self, coordinates: Dict[str, float], days: int, units: str) -> Dict[str, Any]:
-        """Get weather data for coordinates."""
+    async def _get_weather_data(
+        self,
+        coordinates: Dict[str, Any],
+        days: int,
+        units: str
+    ) -> Dict[str, Any]:
+        """Get weather data for geographic coordinates.
+        
+        Args:
+            coordinates: Dict with latitude and longitude
+            days: Number of forecast days
+            units: Temperature units (celsius or fahrenheit)
+            
+        Returns:
+            Dict with weather data or empty dict on error
+        """
         try:
             temp_unit = "celsius" if units == "celsius" else "fahrenheit"
             
@@ -136,7 +175,10 @@ class WeatherFunction(FunctionBase):
                         "latitude": coordinates["latitude"],
                         "longitude": coordinates["longitude"],
                         "current_weather": True,
-                        "daily": "weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max",
+                        "daily": (
+                            "weathercode,temperature_2m_max,temperature_2m_min,"
+                            "precipitation_sum,windspeed_10m_max"
+                        ),
                         "forecast_days": days,
                         "temperature_unit": temp_unit,
                         "timezone": "auto"
@@ -145,62 +187,64 @@ class WeatherFunction(FunctionBase):
                 response.raise_for_status()
                 
                 data = response.json()
-                
-                # Add location info
                 data["location"] = coordinates
                 
                 return data
                 
         except Exception as e:
-            logger.error(f"Error getting weather data: {str(e)}")
+            logger.error("Error getting weather data: %s", str(e))
             return {}
     
-    def _format_weather_response(self, weather_data: Dict[str, Any], location: str) -> str:
-        """Format weather data into a readable response."""
+    def _format_weather_response(
+        self,
+        weather_data: Dict[str, Any],
+        location: str
+    ) -> str:
+        """Format weather data into a human-readable message.
+        
+        Args:
+            weather_data: Weather data from OpenMeteo API
+            location: Original location query
+            
+        Returns:
+            Formatted weather message with current conditions and forecast
+        """
         try:
             current = weather_data.get("current_weather", {})
             daily = weather_data.get("daily", {})
             location_info = weather_data.get("location", {})
             
-            # Weather codes mapping
-            weather_codes = {
-                0: "☀️ Clear sky",
-                1: "🌤️ Mainly clear",
-                2: "⛅ Partly cloudy",
-                3: "☁️ Overcast",
-                45: "🌫️ Foggy",
-                48: "🌫️ Depositing rime fog",
-                51: "🌦️ Light drizzle",
-                53: "🌦️ Moderate drizzle",
-                55: "🌦️ Dense drizzle",
-                61: "🌧️ Slight rain",
-                63: "🌧️ Moderate rain",
-                65: "🌧️ Heavy rain",
-                80: "🌦️ Slight rain showers",
-                81: "🌦️ Moderate rain showers",
-                82: "🌦️ Violent rain showers",
-                95: "⛈️ Thunderstorm",
-                96: "⛈️ Thunderstorm with slight hail",
-                99: "⛈️ Thunderstorm with heavy hail"
-            }
+            weather_codes = self._get_weather_code_mapping()
             
-            # Current weather
             current_temp = current.get("temperature", 0)
             current_code = current.get("weathercode", 0)
             current_condition = weather_codes.get(current_code, "Unknown")
             
-            response = f"🌍 Weather for {location_info.get('name', location)}\n\n"
-            response += f"🌡️ Current: {current_temp}°{'C' if weather_data.get('current_weather_units', {}).get('temperature') == '°C' else 'F'}\n"
-            response += f"{current_condition}\n"
+            temp_unit = (
+                "C" if weather_data.get(
+                    "current_weather_units", {}
+                ).get("temperature") == "°C" else "F"
+            )
             
-            # Daily forecast
-            if daily and len(daily.get("time", [])) > 0:
+            response = (
+                f"🌍 Weather for {location_info.get('name', location)}\n\n"
+                f"🌡️ Current: {current_temp}°{temp_unit}\n"
+                f"{current_condition}\n"
+            )
+            
+            if daily and daily.get("time"):
                 response += "\n📅 Forecast:\n"
-                for i, date in enumerate(daily.get("time", [])[:3]):  # Show max 3 days
+                max_days = min(3, len(daily["time"]))
+                for i in range(max_days):
                     if i < len(daily.get("temperature_2m_max", [])):
+                        date = daily["time"][i]
                         max_temp = daily["temperature_2m_max"][i]
                         min_temp = daily["temperature_2m_min"][i]
-                        precipitation = daily.get("precipitation_sum", [0])[i] if i < len(daily.get("precipitation_sum", [])) else 0
+                        precipitation = (
+                            daily.get("precipitation_sum", [0])[i]
+                            if i < len(daily.get("precipitation_sum", []))
+                            else 0
+                        )
                         
                         response += f"• {date}: {min_temp}°-{max_temp}°"
                         if precipitation > 0:
@@ -210,5 +254,36 @@ class WeatherFunction(FunctionBase):
             return response
             
         except Exception as e:
-            logger.error(f"Error formatting weather response: {str(e)}")
-            return f"Weather data received for {location}, but formatting failed."
+            logger.error("Error formatting weather response: %s", str(e))
+            return (
+                f"Weather data received for {location}, "
+                "but formatting failed."
+            )
+    
+    @staticmethod
+    def _get_weather_code_mapping() -> Dict[int, str]:
+        """Get WMO weather code to emoji/description mapping.
+        
+        Returns:
+            Dict mapping weather codes to human-readable descriptions
+        """
+        return {
+            0: "☀️ Clear sky",
+            1: "🌤️ Mainly clear",
+            2: "⛅ Partly cloudy",
+            3: "☁️ Overcast",
+            45: "🌫️ Foggy",
+            48: "🌫️ Depositing rime fog",
+            51: "🌦️ Light drizzle",
+            53: "🌦️ Moderate drizzle",
+            55: "🌦️ Dense drizzle",
+            61: "🌧️ Slight rain",
+            63: "🌧️ Moderate rain",
+            65: "🌧️ Heavy rain",
+            80: "🌦️ Slight rain showers",
+            81: "🌦️ Moderate rain showers",
+            82: "🌦️ Violent rain showers",
+            95: "⛈️ Thunderstorm",
+            96: "⛈️ Thunderstorm with slight hail",
+            99: "⛈️ Thunderstorm with heavy hail"
+        }

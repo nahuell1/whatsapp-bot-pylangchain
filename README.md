@@ -1,90 +1,197 @@
 # WhatsApp Bot with AI Intent Detection & Dynamic Functions
 
-A professional WhatsApp bot system with intelligent message processing, featuring **dynamic intent detection**, **automatic function discovery**, and **multi-camera support**. Built with Node.js frontend (whatsapp-web.js) and Python backend using LangChain and GPT-4.
+A WhatsApp bot system with intelligent message processing, featuring **GPT-powered intent detection**, **automatic function discovery**, and **multi-camera support**. Built with Node.js frontend (whatsapp-web.js) and Python backend using LangChain and OpenAI GPT.
 
 ## 🚀 Key Features
 
 ### 🧠 Intelligent AI Processing
-- **Dynamic Intent Detection**: Uses GPT-4 to automatically detect user intent and function calls
-- **Smart Parameter Inference**: Automatically extracts and validates function parameters from natural language
-- **Context-Aware Responses**: Maintains conversation context and provides intelligent replies
+- **Dynamic Intent Detection**: Uses GPT to automatically detect user intent and function calls from natural language
+- **Smart Parameter Inference**: Automatically extracts and validates function parameters from conversational messages
+- **Context-Aware Responses**: Maintains conversation history and provides intelligent, contextual replies
+- **Conversation Memory**: Persistent chat history with Redis or in-memory storage
 
 ### 🔧 Automatic Function Discovery
 - **Zero Configuration**: Drop Python functions into `/backend/functions/` and they're automatically available
 - **Dynamic Examples**: Functions include training examples for better AI understanding
-- **Hot Reloading**: Functions are loaded dynamically without restart (during development)
+- **Hot Reloading**: Functions are loaded dynamically without restart
+- **Decorator-Based**: Simple `@bot_function()` decorator for instant registration
 
 ### 📸 Advanced Camera System
 - **Multi-Protocol Support**: RTSP, HTTP, ONVIF, and MJPEG cameras
 - **Automatic Discovery**: Environment-based camera configuration with auto-detection
-- **Simultaneous Capture**: Capture from multiple cameras concurrently
+- **Concurrent Capture**: Capture from multiple cameras simultaneously (configurable limit)
 - **Base64 Image Transmission**: Seamless image sharing through WhatsApp
+- **Caching**: Image caching to reduce redundant captures
 
 ### 🏠 Smart Home Integration
 - **Home Assistant Support**: Full integration with Home Assistant automation
-- **Entity Control**: Turn on/off lights, scenes, automations, and more
+- **Entity Control**: Turn on/off lights, scenes, automations, switches, and more
 - **State Monitoring**: Check sensor states and device information
+- **Device Discovery**: List all available entities and their states
 
 ### 🌍 Rich Function Library
-- **Weather Information**: Real-time weather and forecasts (OpenMeteo API)
+- **Weather Information**: Real-time weather and 7-day forecasts (OpenMeteo API)
 - **News Updates**: Latest news from Reddit Argentina
-- **System Monitoring**: CPU, memory, disk usage, and system information
-- **Dollar Exchange**: Argentine peso/USD exchange rates
+- **System Monitoring**: CPU, memory, disk usage, process info, and system statistics
+- **Dollar Exchange**: Argentine peso/USD exchange rates (official, blue, MEP)
+- **Wikipedia Search**: Multi-language Wikipedia article search with intelligent scoring
+- **Trends**: X/Twitter trending topics with fallback strategies
+- **Google Calendar**: OAuth integration for calendar event management
 
 ## 📋 Architecture
 
-```mermaid
-graph TB
-    A[WhatsApp Message] --> B[Node.js Frontend]
-    B --> C{Message Type}
-    C -->|"!command"| D[Direct Command Handler]
-    C -->|Natural Language| E[Python Backend]
-    E --> F[GPT-4 Intent Detector]
-    F --> G[Dynamic Function Manager]
-    G --> H[Function Execution]
-    D --> I[Function Execution]
-    H --> J[Response Processing]
-    I --> J
-    J --> K[WhatsApp Response]
-    K -->|Images| L[Base64 Media Handler]
-    
-    style F fill:#e1f5fe
-    style G fill:#f3e5f5
-    style H fill:#e8f5e8
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        WhatsApp Message                         │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+                               ▼
+                ┌──────────────────────────────┐
+                │    Node.js Frontend          │
+                │  (whatsapp-web.js)           │
+                └──────────────┬───────────────┘
+                               │
+                      ┌────────┴────────┐
+                      │   Message Type? │
+                      └────────┬────────┘
+                               │
+               ┌───────────────┴───────────────┐
+               │                               │
+               ▼                               ▼
+    ┌──────────────────┐           ┌──────────────────┐
+    │ Direct Command   │           │ Natural Language │
+    │   (!command)     │           │    Processing    │
+    └─────────┬────────┘           └─────────┬────────┘
+              │                              │
+              │                              ▼
+              │                    ┌──────────────────┐
+              │                    │ Python Backend   │
+              │                    │   (FastAPI)      │
+              │                    └─────────┬────────┘
+              │                              │
+              │                              ▼
+              │                    ┌──────────────────┐
+              │                    │ GPT Intent       │
+              │                    │   Detector       │
+              │                    └─────────┬────────┘
+              │                              │
+              │                              ▼
+              │                    ┌──────────────────┐
+              │                    │ Function Manager │
+              │                    │ (Dynamic Load)   │
+              │                    └─────────┬────────┘
+              │                              │
+              └───────────────┬──────────────┘
+                              │
+                              ▼
+                   ┌──────────────────┐
+                   │ Function Execute │
+                   │  (Validation +   │
+                   │   Execution)     │
+                   └─────────┬────────┘
+                             │
+                             ▼
+                  ┌──────────────────┐
+                  │ Response Process │
+                  │ (Text + Media)   │
+                  └─────────┬────────┘
+                            │
+                            ▼
+                 ┌──────────────────┐
+                 │ WhatsApp Response│
+                 │ (with images)    │
+                 └──────────────────┘
 ```
 
 ## 🛠 Installation
 
 ### Prerequisites
 - **Node.js** 18+ with npm
-- **Python** 3.9+
-- **OpenAI API Key** (GPT-4 access required)
+- **Python** 3.9+ (3.12 recommended)
+- **OpenAI API Key** (GPT access required)
+- **Redis** (optional, for persistent conversation memory)
 
 ### Quick Setup
 
-1. **Clone and Setup**:
+1. **Clone Repository**:
 ```bash
 git clone https://github.com/nahuell1/whatsapp-bot-pylangchain.git
 cd whatsapp-bot-pylangchain
+```
+
+2. **Run Setup Script**:
+```bash
 chmod +x setup.sh start.sh
 ./setup.sh
 ```
+This will:
+- Install Node.js dependencies
+- Create Python virtual environment
+- Install Python dependencies
+- Create `.env` file from template
 
-2. **Configure Environment**:
+3. **Configure Environment**:
 ```bash
 cp .env.example .env
-# Edit .env with your settings - AT MINIMUM set OPENAI_API_KEY
 nano .env
+# Required: Set OPENAI_API_KEY
+# Optional: Configure cameras, Home Assistant, etc.
 ```
 
-3. **Start the Bot**:
+**Minimum Configuration**:
+```bash
+OPENAI_API_KEY=sk-your-api-key-here
+```
+
+4. **Start the Bot**:
 ```bash
 ./start.sh
 ```
 
-4. **Scan QR Code** with WhatsApp mobile app when prompted
+5. **Authenticate WhatsApp**:
+- Scan QR code with WhatsApp mobile app when prompted
+- Wait for "WhatsApp client is ready!" message
 
-That's it! The bot is ready to use. 🎉
+That's it! The bot is now running and ready to receive messages. 🎉
+
+## 🛠 Docker compose
+
+### Prerequisites
+- **OpenAI API Key** (GPT access required)
+- **Docker** and **Docker Compose** installed
+
+### Quick Setup and Run
+
+1. **Clone Repository**:
+```bash
+git clone https://github.com/nahuell1/whatsapp-bot-pylangchain.git
+cd whatsapp-bot-pylangchain
+```
+
+2. **Create .env File**:
+```bash
+cp .env.example .env
+nano .env
+# Required: Set OPENAI_API_KEY
+# Optional: Configure cameras, Home Assistant, etc.
+```
+
+3. **Start Services**:
+```bash
+docker-compose up -d
+```
+
+4. **Authenticate WhatsApp**:
+- Check logs for QR code URL:
+```bash
+docker-compose logs -f whatsapp-bot
+```
+
+5. **Authenticate WhatsApp**:
+- Scan QR code with WhatsApp mobile app when prompted
+- Wait for "WhatsApp client is ready!" message
+
+That's it! The bot is now running and ready to receive messages. 🎉
 
 ## 📱 Usage Examples
 
@@ -115,8 +222,8 @@ Bot: 📸 Capture Multiple Cameras
 For immediate execution without AI processing:
 
 ```
-!weather Buenos Aires          # Weather information
-!allcameras                    # All camera snapshots
+!weather Buenos Aires         # Weather information
+!allcameras                   # All camera snapshots
 !camera kitchen               # Specific camera
 !dollar                       # Exchange rates
 !news                         # Latest news
@@ -241,41 +348,88 @@ class SecurityCameraFunction(FunctionBase):
 
 ### Core Settings (.env)
 ```bash
-# Required
+# ========== Required ==========
 OPENAI_API_KEY=sk-your-api-key-here
 
-# Backend
+# ========== Backend ==========
+BACKEND_URL=http://localhost:8000
 BACKEND_HOST=localhost
 BACKEND_PORT=8000
-OPENAI_MODEL=gpt-4.1-nano-2025-04-14
+OPENAI_MODEL=gpt-4-turbo-preview
 
-# Logging  
+# ========== Logging ==========
 LOG_LEVEL=INFO
 
-# Timeouts
+# ========== Features ==========
+ENABLE_GROUP_MESSAGES=true
+ENABLE_TYPING_INDICATOR=true
+MAX_MESSAGE_LENGTH=10000
+
+# ========== Memory ==========
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+# Leave REDIS_* empty to use in-memory storage
+
+# ========== Timeouts ==========
 FUNCTION_TIMEOUT=30
-MAX_MESSAGE_LENGTH=1000
+BACKEND_TIMEOUT=30000
 ```
 
 ### Camera Configuration
 ```bash
-# Auto-discovery format: CAMERA_[NAME]_[CONFIG]
+# HTTP Camera Example
 CAMERA_KITCHEN_IP=192.168.1.100
 CAMERA_KITCHEN_TYPE=http
 CAMERA_KITCHEN_PATH=/snapshot.jpg
-CAMERA_KITCHEN_USERNAME=user
-CAMERA_KITCHEN_PASSWORD=pass
+CAMERA_KITCHEN_USERNAME=admin
+CAMERA_KITCHEN_PASSWORD=secretpass
 
-# RTSP example
-CAMERA_FRONTDOOR_IP=192.168.1.101  
+# RTSP Camera Example
+CAMERA_FRONTDOOR_IP=192.168.1.101
 CAMERA_FRONTDOOR_TYPE=rtsp
-CAMERA_FRONTDOOR_URL=rtsp://user:pass@192.168.1.101/stream1
+CAMERA_FRONTDOOR_URL=rtsp://admin:pass@192.168.1.101/stream1
+
+# ONVIF Camera Example
+CAMERA_GARAGE_IP=192.168.1.102
+CAMERA_GARAGE_TYPE=onvif
+CAMERA_GARAGE_USERNAME=admin
+CAMERA_GARAGE_PASSWORD=pass
+
+# MJPEG Camera Example
+CAMERA_BACKYARD_IP=192.168.1.103
+CAMERA_BACKYARD_TYPE=mjpeg
+CAMERA_BACKYARD_PATH=/mjpeg
+CAMERA_BACKYARD_USERNAME=admin
+CAMERA_BACKYARD_PASSWORD=pass
 ```
 
 ### Home Assistant Integration
 ```bash
 HOME_ASSISTANT_URL=http://homeassistant.local:8123
-HOME_ASSISTANT_TOKEN=your_long_lived_access_token
+HOME_ASSISTANT_TOKEN=your_long_lived_access_token_here
+
+# To get token:
+# 1. Go to Home Assistant Profile
+# 2. Scroll to "Long-Lived Access Tokens"
+# 3. Click "Create Token"
+```
+
+### Google Calendar Integration
+```bash
+GOOGLE_CALENDAR_CLIENT_ID=your_client_id
+GOOGLE_CALENDAR_CLIENT_SECRET=your_client_secret
+GOOGLE_CALENDAR_PRIMARY=your_primary_calendar_id
+
+# Setup instructions in backend/functions/google_calendar.py
+```
+
+### Access Control
+```bash
+# Comma-separated phone numbers (without @c.us)
+# Leave empty to allow all users
+ALLOWED_USER_IDS=5491112345678,5491187654321
 ```
 
 ## 🚀 Advanced Usage
@@ -311,74 +465,113 @@ curl http://localhost:8000/functions
 ## 🏗 Architecture Details
 
 ### Intent Detection System
-- **GPT-4 Powered**: Uses advanced language model for intent classification
+- **GPT Powered**: Uses advanced language model for intent classification and parameter extraction
 - **Dynamic Training**: Functions provide examples that automatically update AI prompts
-- **Parameter Extraction**: Intelligent extraction of function parameters from natural language
-- **Confidence Scoring**: Each detection includes confidence levels
+- **Parameter Extraction**: Intelligent extraction and type coercion of function parameters from natural language
+- **Confidence Scoring**: Each detection includes confidence levels and metadata
+- **Fallback Handling**: Graceful degradation when intent cannot be determined
 
 ### Function Management
-- **Auto-Discovery**: Functions are automatically loaded from the `/functions` directory
-- **Decorator-Based**: Simple `@bot_function()` decorator for registration  
-- **Inheritance System**: Base class provides common functionality
-- **Error Handling**: Comprehensive error handling and user-friendly messages
+- **Auto-Discovery**: Functions are automatically loaded from the `/backend/functions/` directory
+- **Decorator-Based**: Simple `@bot_function("name")` decorator for instant registration
+- **Inheritance System**: Base class (`FunctionBase`) provides common functionality and validation
+- **Error Handling**: Comprehensive error handling with user-friendly messages
+- **Timeout Protection**: Configurable timeout for function execution
+- **Type Validation**: Automatic parameter type validation and coercion
 
 ### Message Processing Pipeline
-1. **Message Reception** (WhatsApp → Node.js)
-2. **Command Detection** (Direct `!command` vs Natural Language)
-3. **Intent Analysis** (GPT-4 classification)
-4. **Function Execution** (Parameter validation & execution)
-5. **Response Formatting** (Text + Media handling)
-6. **Delivery** (WhatsApp response with images/text)
+1. **Message Reception** (WhatsApp → Node.js via whatsapp-web.js)
+2. **Deduplication** (Check processed message IDs to avoid duplicates)
+3. **Access Control** (Verify user is authorized if ALLOWED_USER_IDS is set)
+4. **Command Detection** (Direct `!command` vs Natural Language)
+5. **Intent Analysis** (GPT classification with function examples)
+6. **Parameter Validation** (Type checking and required field validation)
+7. **Function Execution** (Execute with timeout protection)
+8. **Response Formatting** (Text + Media handling with Base64 images)
+9. **Delivery** (WhatsApp response with proper error handling)
+
+### Conversation Memory
+- **Persistent Storage**: Redis-based or in-memory conversation history
+- **Context Window**: Configurable conversation history (default: 10 messages)
+- **User Isolation**: Each user has separate conversation context
+- **Expiration**: Automatic cleanup of old conversations (default: 24 hours)
 
 ## 🧪 Development
 
 ### Project Structure
 ```
 whatsapp-bot-pylangchain/
-├── src/                      # Node.js Frontend
-│   ├── bot.js               # Main WhatsApp bot logic
-│   ├── command-handler.js   # Direct command processing
+├── index.js                 # Main entry point
+├── src/                     # Node.js Frontend
+│   ├── bot.js              # Main WhatsApp bot logic
+│   ├── command-handler.js  # Direct command processing
 │   ├── message-processor.js # Message parsing utilities
-│   └── utils/              # Utility modules
-├── backend/                 # Python Backend
-│   ├── main.py             # FastAPI application
-│   ├── core/               # Core functionality
-│   │   ├── intent_detector.py  # GPT-4 intent detection
-│   │   ├── function_manager.py # Function loading/execution
-│   │   ├── chat_handler.py    # Chat conversation handling
-│   │   └── config.py         # Configuration management
-│   ├── functions/          # Function modules (auto-loaded)
-│   │   ├── base.py         # Base function class
-│   │   ├── camera.py       # Camera functionality
-│   │   ├── allcameras.py   # Multi-camera support
-│   │   ├── weather.py      # Weather information
-│   │   ├── home_assistant.py # Smart home integration
-│   │   ├── dollar.py       # Exchange rates
-│   │   ├── news.py         # News updates
-│   │   └── system_info.py  # System monitoring
-│   └── models/             # Data models
-└── docs/                   # Documentation
+│   ├── config.js           # Frontend configuration
+│   └── utils/
+│       └── logger.js       # Custom logger
+├── backend/                # Python Backend
+│   ├── main.py            # FastAPI application
+│   ├── core/              # Core functionality
+│   │   ├── __init__.py
+│   │   ├── config.py      # Configuration management (Pydantic)
+│   │   ├── chat_handler.py    # GPT conversation handler
+│   │   ├── intent_detector.py # Intent detection & classification
+│   │   ├── function_manager.py # Dynamic function loading
+│   │   └── memory.py      # Conversation memory (Redis/in-memory)
+│   ├── functions/         # Function modules (auto-loaded)
+│   │   ├── __init__.py
+│   │   ├── base.py        # Base class for all functions
+│   │   ├── camera.py      # Single camera capture
+│   │   ├── allcameras.py  # Multi-camera concurrent capture
+│   │   ├── ip_camera.py   # Simple IP camera
+│   │   ├── weather.py     # Weather via OpenMeteo
+│   │   ├── home_assistant.py # Home Assistant integration
+│   │   ├── google_calendar.py # Google Calendar OAuth
+│   │   ├── dollar.py      # Exchange rates
+│   │   ├── news.py        # Reddit RSS news
+│   │   ├── trends.py      # X/Twitter trends
+│   │   ├── wiki.py        # Wikipedia search
+│   │   ├── system_info.py # System monitoring
+│   │   └── example.py     # Template/example function
+│   └── models/            # Pydantic models
+│       ├── __init__.py
+│       ├── message.py     # Message request/response models
+│       └── response.py    # Response models
+├── tests/                 # Test files
+│   └── test_backend.py
+├── docs/                  # Documentation
+│   └── DEVELOPMENT.md
+├── setup.sh              # Setup script
+├── start.sh              # Start/stop script
+├── requirements.txt      # Python dependencies
+└── package.json          # Node.js dependencies
 ```
 
 ### Running Tests
 ```bash
 # Python backend tests
-cd backend && python -m pytest tests/
+cd backend
+python -m pytest tests/ -v
 
-# Node.js frontend tests  
+# Check Python code quality
+cd backend
+python -m pylint core/ functions/
+
+# Node.js tests (if implemented)
 npm test
-
-# Integration tests
-npm run test:integration
 ```
 
-### Contributing
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-function`
-3. Add your function in `/backend/functions/`
-4. Include examples in your function for AI training
-5. Test with both natural language and direct commands
-6. Submit a pull request
+### Creating New Functions
+
+All functions must:
+- Inherit from `FunctionBase`
+- Use `@bot_function("name")` decorator
+- Implement `async def execute(self, **kwargs)` method
+- Return `self.format_success_response()` or `self.format_error_response()`
+- Include `intent_examples` for AI training
+- Have proper type hints and docstrings
+
+See `backend/functions/example.py` for a complete template.
 
 ## 🔒 Security Considerations
 
@@ -388,62 +581,124 @@ npm run test:integration
 - **Error Handling**: Errors don't expose sensitive information
 - **Rate Limiting**: Built-in protection against spam
 
-## 🐛 Troubleshooting
+### Debug Commands
 
-### Common Issues
-
-**QR Code not showing**:
+**Enable verbose logging**:
 ```bash
-./start.sh logs                # Check frontend logs
-# Ensure WhatsApp web session isn't active elsewhere
-```
-
-**Backend not responding**:
-```bash
-curl http://localhost:8000/health  # Test backend
-# Check OPENAI_API_KEY is set correctly
-```
-
-**Functions not detected**:
-```bash
-curl http://localhost:8000/functions  # List available functions
-./start.sh restart                    # Reload functions
-```
-
-**Camera issues**:
-```bash
-# Check camera configurations in .env
-# Test camera URLs directly in browser
-# Verify network connectivity
-```
-
-### Debug Information
-```bash
-# Enable debug mode
 echo "LOG_LEVEL=DEBUG" >> .env
 ./start.sh restart
+./start.sh logs -f
+```
 
-# Monitor logs
+**Test backend directly**:
+```bash
+# Process message
+curl -X POST http://localhost:8000/process-message \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "what is the weather in London?",
+    "user_id": "test_user",
+    "chat_id": "test_chat",
+    "timestamp": "2025-11-01T12:00:00Z",
+    "user_context": {
+      "name": "Test User"
+    }
+  }'
+
+# Execute function directly
+curl -X POST http://localhost:8000/execute-function \
+  -H "Content-Type: application/json" \
+  -d '{
+    "function_name": "weather",
+    "parameters": {"location": "London"}
+  }'
+
+# List functions
+curl http://localhost:8000/functions | jq
+
+# Health check
+curl http://localhost:8000/health
+```
+
+**Check logs**:
+```bash
+# All logs
+./start.sh logs
+
+# Follow logs in real-time
 ./start.sh logs -f
 
-# Test specific function
-curl -X POST http://localhost:8000/execute-function \\
-  -H "Content-Type: application/json" \\
-  -d '{"function_name": "weather", "parameters": {"location": "Madrid"}}'
+# Specific component
+tail -f logs/whatsapp-bot.log
+tail -f backend/logs/app.log
+```
+
+**Process management**:
+```bash
+# Check running processes
+./start.sh status
+
+# See what's using port 8000
+lsof -i :8000
+
+# Kill stuck processes
+pkill -f "python.*main.py"
+pkill -f "node.*index.js"
 ```
 
 ## 🎯 Roadmap
 
-- [ ] **Voice Message Support**: Process audio messages with speech-to-text
-- [ ] **Database Integration**: Persistent conversation history
-- [ ] **Multi-Language Support**: Internationalization
-- [ ] **Plugin Marketplace**: Community-contributed functions  
-- [ ] **Web Dashboard**: Management interface
-- [ ] **Docker Deployment**: Containerized deployment options
+### Planned Features
+- [ ] **Voice Message Support**: Speech-to-text with Whisper API
+- [ ] **Image Analysis**: Vision API integration for image understanding
+- [ ] **Multi-Language Support**: i18n for responses and commands
+- [ ] **Plugin Marketplace**: Community-contributed functions
+- [ ] **Web Dashboard**: Management interface with analytics
+- [ ] **Docker Compose**: Full containerized deployment
+- [ ] **Database Integration**: PostgreSQL for conversation history
+- [ ] **Webhook Support**: Outbound notifications and integrations
+- [ ] **Rate Limiting**: Per-user rate limits and quotas
+- [ ] **Scheduling**: Cron-based scheduled messages
+- [ ] **Group Management**: Advanced group chat features
+
+### Recently Completed
+- [x] **Code Refactoring**: Full PEP 8 compliance and English-only codebase
+- [x] **Type Hints**: Complete type annotations across Python backend
+- [x] **JSDoc Documentation**: Comprehensive documentation for JavaScript frontend
+- [x] **Conversation Memory**: Redis and in-memory storage options
+- [x] **Multi-Camera Support**: Concurrent camera capture
+- [x] **Google Calendar Integration**: OAuth-based calendar management
+- [x] **Access Control**: User whitelist for bot access
+
 
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) file for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our contributing guidelines:
+
+1. **Code Quality**: Follow PEP 8 for Python and JSDoc for JavaScript
+2. **Testing**: Include tests for new features
+3. **Documentation**: Update README.md and add docstrings
+4. **Examples**: Add intent_examples for AI training
+5. **Commits**: Use clear, descriptive commit messages
+
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed development guidelines.
+
+## 🙏 Acknowledgments
+
+- [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js) - WhatsApp Web API
+- [LangChain](https://github.com/langchain-ai/langchain) - LLM framework
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
+- [OpenAI](https://openai.com/) - GPT API
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/nahuell1/whatsapp-bot-pylangchain/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/nahuell1/whatsapp-bot-pylangchain/discussions)
+- **Documentation**: [Wiki](https://github.com/nahuell1/whatsapp-bot-pylangchain/wiki)
 
 ---
 
@@ -452,45 +707,58 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ```
 User: "Hey bot, what's the weather like in Buenos Aires today?"
 
-Bot: 🔧 weather
+Bot: Weather for Buenos Aires
 
-🌍 Weather for Buenos Aires
+Current: 18°C
+Partly cloudy
 
-🌡️ Current: 18°C
-☁️ Partly cloudy
-
-📅 Forecast:
-• 2025-07-19: 12°-22°
-• 2025-07-20: 14°-24°, 🌧️ 2.1mm  
-• 2025-07-21: 16°-26°
+Forecast:
+- 2025-11-02: 12°-22°
+- 2025-11-03: 14°-24°, Rain 2.1mm
+- 2025-11-04: 16°-26°
 
 ---
 
 User: "can you show me all the cameras?"
 
-Bot: 🔧 allcameras
+Bot: Capture Multiple Cameras
 
-📸 Capture Multiple Cameras
+Successful: 2
+Failed: 0
+Total: 2
 
-✅ Successful: 2
-❌ Failed: 0  
-📱 Total: 2
+Cameras captured:
+- kitchen (HTTP)
+- frontdoor (RTSP)
 
-**Cameras captured:**
-• kitchen (HTTP)
-• window (RTSP)
-
-🕐 Completed: 19/07/2025 14:30:15
+Completed: 01/11/2025 14:30:15
 
 [Sends 2 camera images]
 
 ---
 
-User: "turn on the office scene"
+User: "turn on the office lights"
 
-Bot: 🔧 home_assistant
+Bot: Office Lights has been turned on successfully!
 
-🏠 Office On has been turned on successfully!
+---
+
+User: "what's trending on Twitter?"
+
+Bot: X/Twitter Trending Topics (Argentina)
+
+Top trends:
+1. #TrendingTopic
+2. Technology
+3. AI News
+4. Buenos Aires
+5. World Cup
+
+Updated: 01/11/2025 14:35:00
 ```
 
-**Built with ❤️ community**
+---
+
+**Built with ❤️ by [ndev](https://ndev.com.ar)**
+
+**⭐ Star this repo if you find it useful!**

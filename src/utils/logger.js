@@ -1,24 +1,40 @@
 /**
- * Logger utility for the WhatsApp bot
+ * Logger Module
+ * 
+ * Custom logger implementation with file and console output.
+ * Supports multiple log levels (error, warn, info, debug) and automatic log rotation.
+ * 
+ * @module utils/logger
  */
 
 const fs = require('fs');
 const path = require('path');
 
-// Load environment variables
 require('dotenv').config();
 
+// Constants
+const DEFAULT_LOG_LEVEL = 'info';
+const LOG_LEVELS = {
+    ERROR: 0,
+    WARN: 1,
+    INFO: 2,
+    DEBUG: 3
+};
+const DEFAULT_MAX_LOG_AGE = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Logger class for structured logging with file and console output
+ */
 class Logger {
     constructor() {
-        this.logLevel = (process.env.LOG_LEVEL || 'info').toLowerCase();
+        this.logLevel = (process.env.LOG_LEVEL || DEFAULT_LOG_LEVEL).toLowerCase();
         this.levels = {
-            error: 0,
-            warn: 1,
-            info: 2,
-            debug: 3
+            error: LOG_LEVELS.ERROR,
+            warn: LOG_LEVELS.WARN,
+            info: LOG_LEVELS.INFO,
+            debug: LOG_LEVELS.DEBUG
         };
         
-        // Create logs directory if it doesn't exist
         const logsDir = path.join(process.cwd(), 'logs');
         if (!fs.existsSync(logsDir)) {
             fs.mkdirSync(logsDir, { recursive: true });
@@ -28,10 +44,22 @@ class Logger {
         this.errorFile = path.join(logsDir, 'error.log');
     }
 
+    /**
+     * Check if log level should be logged
+     * @param {string} level - Log level to check
+     * @returns {boolean} True if level should be logged
+     */
     shouldLog(level) {
         return this.levels[level] <= this.levels[this.logLevel.toLowerCase()];
     }
 
+    /**
+     * Format log message with timestamp and metadata
+     * @param {string} level - Log level
+     * @param {string} message - Log message
+     * @param {*} extra - Additional data to log
+     * @returns {string} Formatted log message
+     */
     formatMessage(level, message, extra = null) {
         const timestamp = new Date().toISOString();
         const processId = process.pid;
@@ -50,15 +78,18 @@ class Logger {
         return logMessage;
     }
 
+    /**
+     * Write log message to file
+     * @param {string} message - Formatted log message
+     * @param {boolean} isError - Whether this is an error log
+     */
     writeToFile(message, isError = false) {
         try {
             const file = isError ? this.errorFile : this.logFile;
-            // Ensure the directory exists
             const dir = path.dirname(file);
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
-            // Write synchronously to ensure logs are written immediately
             fs.appendFileSync(file, message + '\n');
         } catch (error) {
             console.error('Failed to write to log file:', error);
@@ -67,6 +98,12 @@ class Logger {
         }
     }
 
+    /**
+     * Log message at specified level
+     * @param {string} level - Log level
+     * @param {string} message - Log message
+     * @param {*} extra - Additional data to log
+     */
     log(level, message, extra = null) {
         if (!this.shouldLog(level)) {
             return;
@@ -74,7 +111,6 @@ class Logger {
 
         const formattedMessage = this.formatMessage(level, message, extra);
         
-        // Write to console first
         if (level === 'error') {
             console.error(formattedMessage);
         } else if (level === 'warn') {
@@ -85,28 +121,50 @@ class Logger {
             console.log(formattedMessage);
         }
         
-        // Then write to file
         this.writeToFile(formattedMessage, level === 'error');
     }
 
+    /**
+     * Log error message
+     * @param {string} message - Error message
+     * @param {*} extra - Additional error data
+     */
     error(message, extra = null) {
         this.log('error', message, extra);
     }
 
+    /**
+     * Log warning message
+     * @param {string} message - Warning message
+     * @param {*} extra - Additional warning data
+     */
     warn(message, extra = null) {
         this.log('warn', message, extra);
     }
 
+    /**
+     * Log info message
+     * @param {string} message - Info message
+     * @param {*} extra - Additional info data
+     */
     info(message, extra = null) {
         this.log('info', message, extra);
     }
 
+    /**
+     * Log debug message
+     * @param {string} message - Debug message
+     * @param {*} extra - Additional debug data
+     */
     debug(message, extra = null) {
         this.log('debug', message, extra);
     }
 
-    // Clean up old log files
-    cleanup(maxAge = 7 * 24 * 60 * 60 * 1000) { // 7 days default
+    /**
+     * Clean up old log files
+     * @param {number} maxAge - Maximum age of log files in milliseconds
+     */
+    cleanup(maxAge = DEFAULT_MAX_LOG_AGE) {
         try {
             const logsDir = path.dirname(this.logFile);
             const files = fs.readdirSync(logsDir);

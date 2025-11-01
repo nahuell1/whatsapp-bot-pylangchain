@@ -1,38 +1,46 @@
 /**
- * Configuration settings for the WhatsApp bot
+ * Configuration Module
+ * 
+ * Loads and exports all environment-based configuration settings for the WhatsApp bot.
+ * Settings include backend connection, rate limiting, features, and access control.
+ * 
+ * @module config
  */
 
 require('dotenv').config();
 
+// Default values
+const DEFAULT_BACKEND_URL = 'http://localhost:8000';
+const DEFAULT_BACKEND_TIMEOUT = 30000;
+const DEFAULT_MAX_MESSAGE_LENGTH = 10000;
+const DEFAULT_LOG_LEVEL = 'info';
+const DEFAULT_RATE_LIMIT_WINDOW = 60000;
+const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 10;
+const DEFAULT_HEALTH_CHECK_INTERVAL = 300000;
+const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_RETRY_DELAY = 1000;
+
 module.exports = {
-    // Backend configuration
-    BACKEND_URL: process.env.BACKEND_URL || 'http://localhost:8000',
-    BACKEND_TIMEOUT: parseInt(process.env.BACKEND_TIMEOUT) || 30000,
+    BACKEND_URL: process.env.BACKEND_URL || DEFAULT_BACKEND_URL,
+    BACKEND_TIMEOUT: parseInt(process.env.BACKEND_TIMEOUT) || DEFAULT_BACKEND_TIMEOUT,
     
-    // WhatsApp configuration
     WHATSAPP_SESSION_PATH: process.env.WHATSAPP_SESSION_PATH || './.wwebjs_auth',
-    MAX_MESSAGE_LENGTH: parseInt(process.env.MAX_MESSAGE_LENGTH) || 10000,
+    MAX_MESSAGE_LENGTH: parseInt(process.env.MAX_MESSAGE_LENGTH) || DEFAULT_MAX_MESSAGE_LENGTH,
     
-    // Logging configuration
-    LOG_LEVEL: process.env.LOG_LEVEL || 'info',
+    LOG_LEVEL: process.env.LOG_LEVEL || DEFAULT_LOG_LEVEL,
     
-    // Rate limiting
-    RATE_LIMIT_WINDOW: parseInt(process.env.RATE_LIMIT_WINDOW) || 60000, // 1 minute
-    RATE_LIMIT_MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 10,
+    RATE_LIMIT_WINDOW: parseInt(process.env.RATE_LIMIT_WINDOW) || DEFAULT_RATE_LIMIT_WINDOW,
+    RATE_LIMIT_MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || DEFAULT_RATE_LIMIT_MAX_REQUESTS,
     
-    // Features
-    ENABLE_GROUP_MESSAGES: process.env.ENABLE_GROUP_MESSAGES === 'true',
+    ENABLE_GROUP_MESSAGES: process.env.ENABLE_GROUP_MESSAGES !== 'false',
     ENABLE_MEDIA_PROCESSING: process.env.ENABLE_MEDIA_PROCESSING === 'true',
     ENABLE_TYPING_INDICATOR: process.env.ENABLE_TYPING_INDICATOR !== 'false',
     
-    // Health check
-    HEALTH_CHECK_INTERVAL: parseInt(process.env.HEALTH_CHECK_INTERVAL) || 300000, // 5 minutes
+    HEALTH_CHECK_INTERVAL: parseInt(process.env.HEALTH_CHECK_INTERVAL) || DEFAULT_HEALTH_CHECK_INTERVAL,
     
-    // Error handling
-    MAX_RETRIES: parseInt(process.env.MAX_RETRIES) || 3,
-    RETRY_DELAY: parseInt(process.env.RETRY_DELAY) || 1000,
+    MAX_RETRIES: parseInt(process.env.MAX_RETRIES) || DEFAULT_MAX_RETRIES,
+    RETRY_DELAY: parseInt(process.env.RETRY_DELAY) || DEFAULT_RETRY_DELAY,
     
-    // Access control (comma separated user IDs / phone numbers without @c.us)
     ALLOWED_USER_IDS: (process.env.ALLOWED_USER_IDS || '')
         .split(',')
         .map(s => s.trim())

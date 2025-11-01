@@ -1,31 +1,32 @@
-"""Google Calendar integration functions: list upcoming events and create events.
+"""Google Calendar integration: list and create events.
 
 Setup Instructions:
-1. Create a Google Cloud project and enable Google Calendar API.
-2. Create OAuth client credentials (Desktop) and download credentials.json.
-3. Place credentials.json in backend/credentials/google/credentials.json (ignored or mount as secret volume).
-4. First run will perform OAuth; token.json will be stored alongside credentials.
+1. Create Google Cloud project and enable Google Calendar API
+2. Create OAuth client credentials (Desktop) and download credentials.json
+3. Place credentials.json in backend/credentials/google/credentials.json
+4. First run performs OAuth; token.json stored alongside credentials
 
-Environment Variables (optional):
-GOOGLE_CALENDAR_CREDENTIALS_PATH - override credentials path.
-GOOGLE_CALENDAR_TOKEN_PATH - override token storage path.
-GOOGLE_CALENDAR_PRIMARY - calendar ID (default primary).
-TIMEZONE - default timezone for event creation (e.g., America/Argentina/Buenos_Aires).
+Environment Variables:
+- GOOGLE_CALENDAR_CREDENTIALS_PATH: Override credentials path
+- GOOGLE_CALENDAR_TOKEN_PATH: Override token storage path
+- GOOGLE_CALENDAR_PRIMARY: Calendar ID (default: primary)
+- TIMEZONE: Default timezone (e.g., America/Argentina/Buenos_Aires)
 
 Commands:
-!next (alias !events) -> list next events
-!addevent <description>; <when> (aliases !newevent !calendaradd) -> parse natural language and create event.
+- !next (alias !events): List upcoming events
+- !addevent <description>; <when>: Create event with natural language
 
 Examples:
-!next 5
-!events mañana
-!addevent Reunión con Juan; mañana 15:00
-!addevent Doctor turno; 25 agosto 10am
+- !next 5
+- !events tomorrow
+- !addevent Meeting with Juan; tomorrow 15:00
+- !addevent Doctor appointment; August 25 10am
 """
-import os
-import logging
+
 import datetime as dt
-from typing import Dict, Any, List, Optional
+import logging
+import os
+from typing import Any, Dict, List, Optional
 
 try:  # Optional heavy imports
     import dateparser  # type: ignore

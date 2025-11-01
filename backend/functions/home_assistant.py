@@ -1,23 +1,32 @@
+"""Home Assistant integration function.
+
+Provides control of Home Assistant entities and automations
+via REST API with bearer token authentication.
 """
-Home Assistant integration function.
-"""
+
+import logging
+from typing import Any, Dict
 
 import httpx
-import logging
-from typing import Dict, Any
 
-from functions.base import FunctionBase, bot_function
 from core.config import settings
+from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
+
+HA_TIMEOUT_SECONDS = 10.0
 
 
 @bot_function("home_assistant")
 class HomeAssistantFunction(FunctionBase):
-    """Trigger Home Assistant automations and control entities."""
+    """Trigger Home Assistant automations and control entities.
+    
+    Supports entity control (turn_on, turn_off, toggle), state queries,
+    and automation triggers via Home Assistant REST API.
+    """
     
     def __init__(self):
-        """Initialize the Home Assistant function."""
+        """Initialize the Home Assistant function with API configuration."""
         super().__init__(
             name="home_assistant",
             description="Control Home Assistant entities and trigger automations",
@@ -74,30 +83,27 @@ class HomeAssistantFunction(FunctionBase):
         }
     
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        Execute the Home Assistant function.
+        """Execute the Home Assistant function.
         
         Args:
-            **kwargs: Function parameters
+            **kwargs: Function parameters (action, entity_id, service, data)
             
         Returns:
-            Home Assistant operation result
+            Dict with operation result and metadata
         """
         try:
-            # Check configuration
             if not self.base_url or not self.token:
                 return self.format_error_response(
                     "Home Assistant URL and token must be configured"
                 )
             
-            # Validate parameters
             params = self.validate_parameters(**kwargs)
             action = params["action"]
             entity_id = params.get("entity_id")
             service = params.get("service")
             data = params.get("data", {})
             
-            logger.info(f"Executing Home Assistant action: {action}")
+            logger.info("Executing Home Assistant action: %s", action)
             
             # Execute action
             if action == "turn_on":

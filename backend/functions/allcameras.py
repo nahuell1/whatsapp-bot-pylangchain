@@ -1,28 +1,34 @@
-"""
-All Cameras function to capture snapshots from all configured cameras.
+"""All Cameras function to capture snapshots from all configured cameras.
+
+Captures snapshots from multiple cameras concurrently with semaphore-based
+rate limiting to prevent system overload.
 """
 
 import asyncio
 import logging
-from typing import Dict, Any, List
 from datetime import datetime
+from typing import Any, Dict
 
-from functions.camera import CameraFunction
 from functions.base import bot_function
+from functions.camera import CameraFunction
 
 logger = logging.getLogger(__name__)
+
+MAX_CONCURRENT_CAPTURES = 3
 
 
 @bot_function("allcameras")
 class AllCamerasFunction(CameraFunction):
-    """Capture snapshots from all configured IP cameras simultaneously."""
+    """Capture snapshots from all configured IP cameras concurrently.
+    
+    Extends CameraFunction to capture from multiple cameras simultaneously
+    with rate limiting via semaphore.
+    """
     
     def __init__(self):
-        """Initialize the All Cameras function."""
-        # Initialize with camera discovery from parent
+        """Initialize the all cameras function with parent camera discovery."""
         super().__init__()
         
-        # Override function metadata
         self.name = "allcameras"
         self.description = "Capture snapshots from all configured IP cameras"
         self.parameters = {}
@@ -45,39 +51,42 @@ class AllCamerasFunction(CameraFunction):
             }
         ]
         
-        logger.info(f"AllCameras function initialized with {len(self.cameras)} cameras")
+        logger.info(
+            "AllCameras function initialized with %d cameras",
+            len(self.cameras)
+        )
     
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        Execute the all cameras function.
+        """Execute the all cameras function.
         
         Args:
-            **kwargs: Function parameters (none needed)
+            **kwargs: Function parameters (none required)
             
         Returns:
-            Results from all camera captures
+            Dict with results from all camera captures
         """
         try:
             if not self.cameras:
-                return self.format_error_response("No hay cámaras configuradas en el sistema")
+                return self.format_error_response(
+                    "No cameras configured in the system"
+                )
             
             camera_names = list(self.cameras.keys())
-            logger.info(f"Starting capture from {len(camera_names)} cameras: {camera_names}")
+            logger.info(
+                "Starting capture from %d cameras: %s",
+                len(camera_names),
+                camera_names
+            )
             
-            # Capture from all cameras concurrently (with reasonable concurrency limit)
-            semaphore = asyncio.Semaphore(3)  # Limit concurrent captures to avoid overload
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_CAPTURES)
             
             async def capture_with_semaphore(camera_name: str):
                 async with semaphore:
                     return await self._capture_single_camera(camera_name)
             
-            # Create tasks for all cameras
             tasks = [capture_with_semaphore(name) for name in camera_names]
-            
-            # Wait for all captures to complete
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Process results
             successful_captures = []
             failed_captures = []
             
@@ -89,46 +98,52 @@ class AllCamerasFunction(CameraFunction):
                         "camera_name": camera_name,
                         "error": str(result)
                     })
-                    logger.error(f"Camera {camera_name} failed: {str(result)}")
+                    logger.error("Camera %s failed: %s", camera_name, str(result))
                 elif result and result.get('success'):
                     successful_captures.append(result)
-                    logger.info(f"Camera {camera_name} captured successfully")
+                    logger.info("Camera %s captured successfully", camera_name)
                 else:
                     failed_captures.append({
                         "camera_name": camera_name,
                         "error": "Unknown capture failure"
                     })
-                    logger.warning(f"Camera {camera_name} failed with unknown error")
+                    logger.warning(
+                        "Camera %s failed with unknown error", camera_name
+                    )
             
-            # Format response
             total_cameras = len(camera_names)
             success_count = len(successful_captures)
             failed_count = len(failed_captures)
             
             if success_count == 0:
                 return self.format_error_response(
-                    f"No se pudo capturar imagen de ninguna de las {total_cameras} cámaras"
+                    f"Could not capture image from any of the "
+                    f"{total_cameras} cameras"
                 )
             
-            # Create response text
-            response_text = f"📸 **Captura Múltiple de Cámaras**\n\n"
-            response_text += f"✅ Exitosas: {success_count}\n"
-            response_text += f"❌ Fallidas: {failed_count}\n"
-            response_text += f"📱 Total: {total_cameras}\n\n"
+            timestamp = datetime.now()
+            response_text = (
+                f"📸 **Multiple Camera Capture**\n\n"
+                f"✅ Successful: {success_count}\n"
+                f"❌ Failed: {failed_count}\n"
+                f"📱 Total: {total_cameras}\n\n"
+            )
             
             if successful_captures:
-                response_text += "**Cámaras capturadas:**\n"
+                response_text += "**Captured cameras:**\n"
                 for capture in successful_captures:
                     camera_name = capture['camera_name']
                     camera_type = capture['camera_type'].upper()
                     response_text += f"• {camera_name} ({camera_type})\n"
             
             if failed_captures:
-                response_text += f"\n**Cámaras fallidas:**\n"
+                response_text += "\n**Failed cameras:**\n"
                 for failure in failed_captures:
                     response_text += f"• {failure['camera_name']}\n"
             
-            response_text += f"\n🕐 Completado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+            response_text += (
+                f"\n🕐 Completed: {timestamp.strftime('%d/%m/%Y %H:%M:%S')}"
+            )
             
             return self.format_success_response(
                 {
@@ -137,30 +152,33 @@ class AllCamerasFunction(CameraFunction):
                     "failed_captures": failed_captures,
                     "success_count": success_count,
                     "failed_count": failed_count,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": timestamp.isoformat()
                 },
                 response_text
             )
             
         except Exception as e:
-            logger.error(f"Error in all cameras function: {str(e)}")
-            return self.format_error_response(f"Error al capturar imágenes: {str(e)}")
+            logger.error("Error in all cameras function: %s", str(e))
+            return self.format_error_response(
+                f"Error capturing images: {str(e)}"
+            )
     
     async def _capture_single_camera(self, camera_name: str) -> Dict[str, Any]:
-        """
-        Capture snapshot from a single camera.
+        """Capture snapshot from a single camera.
         
         Args:
             camera_name: Name of the camera to capture from
             
         Returns:
-            Capture result dictionary
+            Dict with capture result and metadata
         """
         try:
             camera_config = self.cameras[camera_name]
             
-            logger.info(f"Capturing from camera: {camera_name}")
-            snapshot_data = await self._capture_snapshot(camera_name, camera_config)
+            logger.info("Capturing from camera: %s", camera_name)
+            snapshot_data = await self._capture_snapshot(
+                camera_name, camera_config
+            )
             
             if snapshot_data:
                 return {
@@ -179,7 +197,9 @@ class AllCamerasFunction(CameraFunction):
                 }
                 
         except Exception as e:
-            logger.error(f"Error capturing from camera {camera_name}: {str(e)}")
+            logger.error(
+                "Error capturing from camera %s: %s", camera_name, str(e)
+            )
             return {
                 "success": False,
                 "camera_name": camera_name,

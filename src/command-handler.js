@@ -1,22 +1,37 @@
 /**
- * Command Handler
- * Handles direct function calls with ! prefix
+ * Command Handler Module
+ * 
+ * Handles direct function calls with ! prefix syntax.
+ * Loads available functions from backend, manages command aliases,
+ * and provides help documentation.
+ * 
+ * @module command-handler
  */
 
 const logger = require('./utils/logger');
 const axios = require('axios');
 
+// Constants
+const COMMAND_PREFIX = '!';
+const DEFAULT_BACKEND_URL = 'http://localhost:8000';
+const MAX_HELP_EXAMPLES = 5;
+
+/**
+ * Command handler class for processing direct function calls
+ */
 class CommandHandler {
     constructor() {
-        this.commandPrefix = '!';
+        this.commandPrefix = COMMAND_PREFIX;
         this.availableFunctions = new Map();
-        this.backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+        this.backendUrl = process.env.BACKEND_URL || DEFAULT_BACKEND_URL;
         this.functionMetadata = null;
         
-        // Load available functions from backend
         this.loadAvailableFunctions();
     }
 
+    /**
+     * Load available functions from backend API
+     */
     async loadAvailableFunctions() {
         try {
             logger.debug('Loading available functions from backend...');
@@ -25,14 +40,11 @@ class CommandHandler {
             if (response.data && response.data.functions) {
                 this.functionMetadata = response.data.functions;
                 
-                // Build command map including aliases
                 this.availableFunctions.clear();
                 for (const [functionName, metadata] of Object.entries(this.functionMetadata)) {
-                    // Register main function name
                     this.availableFunctions.set(functionName, metadata);
                     logger.debug(`Registered command: !${functionName}`);
                     
-                    // Register aliases if they exist
                     if (metadata.command_info && metadata.command_info.aliases) {
                         for (const alias of metadata.command_info.aliases) {
                             this.availableFunctions.set(alias, metadata);
@@ -45,22 +57,28 @@ class CommandHandler {
             }
         } catch (error) {
             logger.error('Failed to load available functions:', error);
-            // Fallback to hardcoded functions if backend is not available
             this.availableFunctions.set('weather', { name: 'weather', description: 'Get weather information' });
             this.availableFunctions.set('news', { name: 'news', description: 'Get latest news' });
             this.availableFunctions.set('system_info', { name: 'system_info', description: 'Get system information' });
         }
     }
 
+    /**
+     * Check if message is a command
+     * @param {string} message - Message text
+     * @returns {boolean} True if message starts with command prefix
+     */
     isCommand(message) {
         return message.startsWith(this.commandPrefix);
     }
 
+    /**
+     * Parse command from message
+     * @param {string} message - Command message
+     * @returns {Object} Parsed command object with command, args, and originalText
+     */
     parseCommand(message) {
-        // Remove the ! prefix
         const commandText = message.substring(1);
-        
-        // Split by spaces to get command and arguments
         const parts = commandText.split(/\s+/);
         const command = parts[0].toLowerCase();
         const args = parts.slice(1);
@@ -72,28 +90,29 @@ class CommandHandler {
         };
     }
 
+    /**
+     * Execute command by calling backend
+     * @param {string} message - Command message
+     * @param {Object} userContext - User context information
+     * @returns {Promise<Object>} Execution result
+     */
     async executeCommand(message, userContext) {
         try {
-            const { command, args, originalText } = this.parseCommand(message);
+            const { command, args } = this.parseCommand(message);
             
             logger.info(`Executing command: !${command} with args: ${args.join(' ')}`);
             
-            // Check if command exists
             if (!this.availableFunctions.has(command)) {
                 return {
                     success: false,
-                    message: `❌ Comando desconocido: !${command}\n\n📋 Comandos disponibles:\n${this.getAvailableCommands()}`
+                    message: `Unknown command: !${command}\n\nAvailable commands:\n${this.getAvailableCommands()}`
                 };
             }
 
-            // Prepare parameters based on the function and arguments
             const parameters = this.prepareParameters(command, args);
-            
-            // Get the actual function name (in case command is an alias)
             const functionMetadata = this.availableFunctions.get(command);
             const actualFunctionName = functionMetadata.name;
             
-            // Execute the function directly via backend
             const response = await axios.post(`${this.backendUrl}/execute-function`, {
                 function_name: actualFunctionName,
                 parameters: parameters,
@@ -137,7 +156,7 @@ class CommandHandler {
             } else {
                 return {
                     success: false,
-                    message: `❌ Error ejecutando !${command}: ${response.data.error}`
+                    message: `Error executing !${command}: ${response.data.error}`
                 };
             }
 
@@ -145,14 +164,19 @@ class CommandHandler {
             logger.error('Error executing command:', error);
             return {
                 success: false,
-                message: `❌ Error interno ejecutando el comando: ${error.message}`
+                message: `Internal error executing command: ${error.message}`
             };
         }
     }
 
+    /**
+     * Prepare function parameters from command arguments
+     * @param {string} command - Command name
+     * @param {Array<string>} args - Command arguments
+     * @returns {Object} Prepared parameters
+     */
     prepareParameters(command, args) {
         const parameters = {};
-        // Allow lookup by alias: try functionMetadata first, else availableFunctions map
         let meta = (this.functionMetadata && this.functionMetadata[command]) || this.availableFunctions.get(command);
         if (!meta) {
             logger.warn(`No metadata found for command or alias: ${command}`);
@@ -161,7 +185,6 @@ class CommandHandler {
         const commandInfo = meta.command_info || {};
         const parameterMapping = commandInfo.parameter_mapping || {};
         
-        // Process parameter mapping
         for (const [paramName, mappingType] of Object.entries(parameterMapping)) {
             switch (mappingType) {
                 case 'join_args':
@@ -192,7 +215,6 @@ class CommandHandler {
             }
         }
         
-        // If no specific mapping and there are arguments, try to infer
         if (Object.keys(parameters).length === 0 && args.length > 0) {
             const functionParams = meta.parameters || {};
             const paramKeys = Object.keys(functionParams);
@@ -203,39 +225,45 @@ class CommandHandler {
             }
         }
         
-    return parameters;
+        return parameters;
     }
 
+    /**
+     * Get list of available commands
+     * @returns {string} Formatted list of commands
+     */
     getAvailableCommands() {
         const commands = Array.from(this.availableFunctions.keys());
-        return commands.map(cmd => `• !${cmd}`).join('\n');
+        return commands.map(cmd => `- !${cmd}`).join('\n');
     }
 
+    /**
+     * Get help text for specific command
+     * @param {string} command - Command name
+     * @returns {string} Formatted help text
+     */
     getCommandHelp(command) {
         const functionInfo = this.availableFunctions.get(command);
         if (!functionInfo) {
-            return `❌ Comando desconocido: !${command}`;
+            return `Unknown command: !${command}`;
         }
 
-        let help = `📋 **!${command}**\n`;
-        help += `${functionInfo.description || 'No hay descripción disponible'}\n\n`;
+        let help = `Command: !${command}\n`;
+        help += `${functionInfo.description || 'No description available'}\n\n`;
         
         const commandInfo = functionInfo.command_info || {};
         
-        // Add usage from command info
         if (commandInfo.usage) {
-            help += `📝 **Uso:** ${commandInfo.usage}\n`;
+            help += `Usage: ${commandInfo.usage}\n`;
         }
         
-        // Add examples from command info
         if (commandInfo.examples && commandInfo.examples.length > 0) {
-            help += `� **Ejemplos:**\n`;
+            help += `Examples:\n`;
             commandInfo.examples.forEach(example => {
-                help += `• ${example}\n`;
+                help += `- ${example}\n`;
             });
         }
         
-        // If no command info, generate basic help from parameters
         if (!commandInfo.usage && !commandInfo.examples) {
             const parameters = functionInfo.parameters || {};
             const paramKeys = Object.keys(parameters);
@@ -252,20 +280,24 @@ class CommandHandler {
                     usage += ` [${optionalParams.join('] [')}]`;
                 }
                 
-                help += `📝 **Uso:** ${usage}\n`;
-                help += `📝 **Ejemplo:** !${command} ${requiredParams.map(() => 'valor').join(' ')}`;
+                help += `Usage: ${usage}\n`;
+                help += `Example: !${command} ${requiredParams.map(() => 'value').join(' ')}`;
             } else {
-                help += `📝 **Uso:** !${command}\n`;
-                help += `📝 **Ejemplo:** !${command}`;
+                help += `Usage: !${command}\n`;
+                help += `Example: !${command}`;
             }
         }
         
         return help;
     }
 
+    /**
+     * Handle help command
+     * @param {Array<string>} args - Command arguments
+     * @returns {Promise<string>} Help text
+     */
     async handleHelpCommand(args) {
         if (args.length === 0) {
-            // General help - generate examples dynamically
             const examples = [];
             for (const [command, functionInfo] of this.availableFunctions) {
                 const commandInfo = functionInfo.command_info || {};
@@ -276,14 +308,13 @@ class CommandHandler {
                 }
             }
             
-            return `🤖 **Sistema de Comandos Directos**\n\n` +
-                   `Los comandos directos se ejecutan sin IA usando el prefijo !\n\n` +
-                   `📋 **Comandos disponibles:**\n${this.getAvailableCommands()}\n\n` +
-                   `💡 **Ejemplos:**\n${examples.slice(0, 5).map(ex => `• ${ex}`).join('\n')}\n\n` +
-                   `❓ **Ayuda específica:** !help <comando>\n` +
-                   `📝 **Ejemplo:** !help weather`;
+            return `Direct Command System\n\n` +
+                   `Direct commands execute without AI using ! prefix\n\n` +
+                   `Available commands:\n${this.getAvailableCommands()}\n\n` +
+                   `Examples:\n${examples.slice(0, MAX_HELP_EXAMPLES).map(ex => `- ${ex}`).join('\n')}\n\n` +
+                   `Specific help: !help <command>\n` +
+                   `Example: !help weather`;
         } else {
-            // Specific command help
             const command = args[0].toLowerCase();
             return this.getCommandHelp(command);
         }

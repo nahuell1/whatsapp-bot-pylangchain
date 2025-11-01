@@ -1,29 +1,35 @@
-"""
-Base class for all bot functions.
+"""Base class and decorators for bot functions.
+
+This module provides the core functionality for creating and registering
+bot functions with automatic discovery and validation.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Set, Type, Optional
 import logging
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, Type
 
 logger = logging.getLogger(__name__)
 
-# Global registry for bot functions
 _REGISTERED_FUNCTIONS: Dict[str, Type['FunctionBase']] = {}
 
 
 def bot_function(name: Optional[str] = None):
-    """
-    Decorator to register a class as a bot function.
+    """Decorator to register a class as a bot function.
     
-    This decorator allows for more flexible inheritance while still
-    maintaining automatic discovery of bot functions.
+    Enables automatic discovery and registration of bot functions
+    while maintaining flexible inheritance patterns.
     
     Args:
-        name: Optional name for the function. If not provided,
-              uses the class name in lowercase.
-    
+        name: Optional function name. If not provided, derives from class name
+        
+    Returns:
+        Decorated class with registration applied
+        
+    Raises:
+        TypeError: If class does not inherit from FunctionBase
+        
     Example:
+        ```python
         @bot_function("weather")
         class WeatherFunction(FunctionBase):
             pass
@@ -35,61 +41,88 @@ def bot_function(name: Optional[str] = None):
         @bot_function("camera")  
         class CameraFunction(CustomBase):
             pass
+        ```
     """
     def decorator(cls: Type['FunctionBase']) -> Type['FunctionBase']:
-        # Ensure the class is a subclass of FunctionBase somewhere in its hierarchy
         if not issubclass(cls, FunctionBase):
-            raise TypeError(f"Class {cls.__name__} must inherit from FunctionBase")
+            raise TypeError(
+                f"Class {cls.__name__} must inherit from FunctionBase"
+            )
         
-        # Determine function name
         function_name = name or cls.__name__.lower().replace('function', '')
         
-        # Register the function
         _REGISTERED_FUNCTIONS[function_name] = cls
-        logger.debug(f"Registered bot function: {function_name} -> {cls.__name__}")
+        logger.debug(
+            "Registered bot function: %s -> %s",
+            function_name,
+            cls.__name__
+        )
         
         return cls
     return decorator
 
 
 def get_registered_functions() -> Dict[str, Type['FunctionBase']]:
-    """Get all registered bot functions."""
+    """Get all registered bot functions.
+    
+    Returns:
+        Dictionary mapping function names to function classes
+    """
     return _REGISTERED_FUNCTIONS.copy()
 
 
-def clear_function_registry():
-    """Clear the function registry (useful for testing)."""
+def clear_function_registry() -> None:
+    """Clear the function registry.
+    
+    Primarily useful for testing to ensure clean state between tests.
+    """
     global _REGISTERED_FUNCTIONS
     _REGISTERED_FUNCTIONS.clear()
 
 
 class FunctionBase(ABC):
-    """Base class for all bot functions."""
+    """Abstract base class for all bot functions.
     
-    def __init__(self, name: str, description: str, parameters: Dict[str, Any], command_info: Dict[str, Any] = None, intent_examples: list = None):
-        """
-        Initialize a function.
+    Provides common functionality for parameter validation, error handling,
+    and response formatting. All bot functions must inherit from this class.
+    
+    Attributes:
+        name: Unique function identifier
+        description: Human-readable function description
+        parameters: Schema defining expected parameters
+        command_info: Direct command execution metadata
+        intent_examples: Training examples for intent detection
+    """
+    
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        parameters: Dict[str, Any],
+        command_info: Optional[Dict[str, Any]] = None,
+        intent_examples: Optional[list] = None
+    ):
+        """Initialize a bot function.
         
         Args:
-            name: Function name
-            description: Function description
-            parameters: Function parameters schema
-            command_info: Command-specific information for direct execution
-            intent_examples: Examples for intent detection training
+            name: Unique function identifier
+            description: Human-readable description
+            parameters: Parameter schema with types and requirements
+            command_info: Optional command execution metadata
+            intent_examples: Optional training examples for AI
         """
         self.name = name
         self.description = description
         self.parameters = parameters
         self.command_info = command_info or {}
         self.intent_examples = intent_examples or []
-        logger.info(f"Initialized function: {name}")
+        logger.info("Initialized function: %s", name)
     
     def get_command_metadata(self) -> Dict[str, Any]:
-        """
-        Get command metadata for direct execution.
+        """Get command metadata for direct execution.
         
         Returns:
-            Command metadata including usage examples and parameter mapping
+            Dictionary containing function metadata, parameters, and examples
         """
         return {
             "name": self.name,
@@ -101,73 +134,111 @@ class FunctionBase(ABC):
     
     @abstractmethod
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        Execute the function with given parameters.
+        """Execute the function with given parameters.
+        
+        Must be implemented by all subclasses to define function behavior.
         
         Args:
-            **kwargs: Function parameters
+            **kwargs: Function-specific parameters
             
         Returns:
-            Dict containing function result and response message
+            Dictionary with keys:
+                - success (bool): Execution success status
+                - result (Any): Function result data
+                - response (str): User-facing response message
+                - error (str, optional): Error message if failed
         """
-        pass
+        ...
     
     def validate_parameters(self, **kwargs) -> Dict[str, Any]:
-        """
-        Validate function parameters.
+        """Validate and coerce function parameters.
+        
+        Performs type checking and conversion according to parameter schema.
         
         Args:
-            **kwargs: Parameters to validate
+            **kwargs: Raw parameters to validate
             
         Returns:
-            Validated parameters
+            Dictionary of validated and coerced parameters
             
         Raises:
-            ValueError: If parameters are invalid
+            ValueError: If required parameters are missing or invalid
         """
         validated = {}
         
         for param_name, param_schema in self.parameters.items():
             value = kwargs.get(param_name)
             
-            # Check if required parameter is missing
             if param_schema.get("required", False) and value is None:
-                raise ValueError(f"Required parameter '{param_name}' is missing")
+                raise ValueError(
+                    f"Required parameter '{param_name}' is missing"
+                )
             
-            # Type validation (basic)
             if value is not None:
-                expected_type = param_schema.get("type", "string")
-                if expected_type == "string" and not isinstance(value, str):
-                    value = str(value)
-                elif expected_type == "integer" and not isinstance(value, int):
-                    try:
-                        value = int(value)
-                    except ValueError:
-                        raise ValueError(f"Parameter '{param_name}' must be an integer")
-                elif expected_type == "number" and not isinstance(value, (int, float)):
-                    try:
-                        value = float(value)
-                    except ValueError:
-                        raise ValueError(f"Parameter '{param_name}' must be a number")
-                elif expected_type == "boolean" and not isinstance(value, bool):
-                    if isinstance(value, str):
-                        value = value.lower() in ("true", "1", "yes", "on")
-                    else:
-                        value = bool(value)
-                
+                value = self._coerce_parameter_type(
+                    param_name,
+                    value,
+                    param_schema
+                )
                 validated[param_name] = value
         
         return validated
     
-    def format_error_response(self, error_message: str) -> Dict[str, Any]:
-        """
-        Format an error response.
+    def _coerce_parameter_type(
+        self,
+        param_name: str,
+        value: Any,
+        param_schema: Dict[str, Any]
+    ) -> Any:
+        """Coerce parameter value to expected type.
         
         Args:
-            error_message: Error message
+            param_name: Parameter name (for error messages)
+            value: Raw parameter value
+            param_schema: Parameter schema with type information
             
         Returns:
-            Formatted error response
+            Coerced value
+            
+        Raises:
+            ValueError: If value cannot be coerced to expected type
+        """
+        expected_type = param_schema.get("type", "string")
+        
+        if expected_type == "string" and not isinstance(value, str):
+            return str(value)
+        
+        if expected_type == "integer" and not isinstance(value, int):
+            try:
+                return int(value)
+            except ValueError:
+                raise ValueError(
+                    f"Parameter '{param_name}' must be an integer"
+                )
+        
+        if expected_type == "number" and not isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except ValueError:
+                raise ValueError(
+                    f"Parameter '{param_name}' must be a number"
+                )
+        
+        if expected_type == "boolean" and not isinstance(value, bool):
+            if isinstance(value, str):
+                return value.lower() in ("true", "1", "yes", "on")
+            return bool(value)
+        
+        return value
+    
+    def format_error_response(self, error_message: str) -> Dict[str, Any]:
+        """Format a standardized error response.
+        
+        Args:
+            error_message: Error description
+            
+        Returns:
+            Dictionary with error information
         """
         return {
             "success": False,
@@ -175,16 +246,19 @@ class FunctionBase(ABC):
             "response": f"Sorry, I encountered an error: {error_message}"
         }
     
-    def format_success_response(self, result: Any, message: str) -> Dict[str, Any]:
-        """
-        Format a success response.
+    def format_success_response(
+        self,
+        result: Any,
+        message: str
+    ) -> Dict[str, Any]:
+        """Format a standardized success response.
         
         Args:
-            result: Function result data
-            message: Response message
+            result: Function execution result data
+            message: User-facing response message
             
         Returns:
-            Formatted success response
+            Dictionary with success information
         """
         return {
             "success": True,

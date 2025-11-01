@@ -1,34 +1,33 @@
-"""
-WhatsApp Bot Backend
-A FastAPI-based backend for processing WhatsApp messages with LangChain and GPT-4.
+"""WhatsApp Bot Backend API.
+
+A FastAPI-based backend for processing WhatsApp messages using LangChain and GPT-4.
+Provides intent detection, function execution, and conversational AI capabilities.
 """
 
-import os
-import sys
 import asyncio
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 
-# Add the backend directory to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.config import settings
-from core.intent_detector import IntentDetector
-from core.function_manager import FunctionManager
 from core.chat_handler import ChatHandler
+from core.config import SettingsValidationError, settings, validate_runtime_settings
+from core.function_manager import FunctionManager
+from core.intent_detector import IntentDetector
 from core.memory import build_memory_store
 from models.message import MessageRequest, MessageResponse
 
-# Load environment variables
 env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
 load_dotenv(env_path)
 
-# Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -41,6 +40,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     logger.info("Starting WhatsApp Bot Backend...")
+
+    try:
+        validate_runtime_settings(settings)
+    except SettingsValidationError as config_error:
+        logger.critical(f"Invalid configuration: {config_error}")
+        raise
     
     # Initialize components
     app.state.intent_detector = IntentDetector()

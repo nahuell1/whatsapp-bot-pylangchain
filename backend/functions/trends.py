@@ -1,10 +1,13 @@
-"""
-Fetch trending X (Twitter) topics via public trends24.in HTML parsing.
+"""Fetch trending X (Twitter) topics via public trends24.in HTML parsing.
+
+Scrapes trends24.in to provide trending topics by region without requiring
+Twitter API authentication.
 """
 
 import logging
-from typing import Dict, Any, List
 from datetime import datetime
+from typing import Any, Dict, List
+
 import httpx
 from bs4 import BeautifulSoup
 
@@ -12,10 +15,23 @@ from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
+HTTP_TIMEOUT_SECONDS = 10.0
+HTTP_CONNECT_TIMEOUT = 5.0
+MIN_TRENDS_COUNT = 3
+MAX_TREND_NAME_LENGTH = 80
+FALLBACK_HASHTAG_LIMIT = 10
+MIN_COUNT = 1
+MAX_COUNT = 20
+DEFAULT_COUNT = 10
+
 
 @bot_function("trends")
 class TrendsFunction(FunctionBase):
-    """Get current X (Twitter) trending topics for a region (best-effort, no auth)."""
+    """Get current X (Twitter) trending topics by region.
+    
+    Scrapes trends24.in to fetch trending topics without requiring
+    Twitter API credentials. Supports multiple regions with synonym mapping.
+    """
 
     BASE_URL = "https://trends24.in"
 
@@ -37,9 +53,12 @@ class TrendsFunction(FunctionBase):
     }
 
     def __init__(self):
+        """Initialize trends function with region synonyms and parameters."""
         super().__init__(
             name="trends",
-            description="Get current X (Twitter) trending topics (no API key needed)",
+            description=(
+                "Get current X (Twitter) trending topics (no API key needed)"
+            ),
             parameters={
                 "region": {
                     "type": "string",
@@ -72,21 +91,31 @@ class TrendsFunction(FunctionBase):
         )
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
+        """Execute the trends function.
+        
+        Args:
+            **kwargs: Function parameters (region, count)
+            
+        Returns:
+            Dict with trending topics and metadata
+        """
         try:
             params = self.validate_parameters(**kwargs)
             region = params.get("region") or "worldwide"
-            count = params.get("count", 10)
-            if count < 1:
-                count = 1
-            if count > 20:
-                count = 20
+            count = params.get("count", DEFAULT_COUNT)
+            count = max(MIN_COUNT, min(count, MAX_COUNT))
 
             norm_region = self._normalize_region(region)
-            logger.info(f"Fetching trends for region '{region}' -> slug '{norm_region}' (count={count})")
+            logger.info(
+                "Fetching trends for region '%s' -> slug '%s' (count=%d)",
+                region, norm_region, count
+            )
 
             trends = await self._fetch_trends(norm_region)
             if not trends:
-                return self.format_error_response(f"No trends found for {region}")
+                return self.format_error_response(
+                    f"No trends found for {region}"
+                )
 
             top = trends[:count]
             result = {
@@ -100,17 +129,41 @@ class TrendsFunction(FunctionBase):
             response = self._format_response(result)
             return self.format_success_response(result, response)
         except Exception as e:
-            logger.error(f"Error in trends function: {e}")
+            logger.error("Error in trends function: %s", e)
             return self.format_error_response(str(e))
 
     def _normalize_region(self, region: str) -> str:
+        """Normalize region name using synonym mapping.
+        
+        Args:
+            region: User-provided region name
+            
+        Returns:
+            Normalized region slug for trends24.in
+        """
         key = (region or "").strip().lower()
         return self.REGION_SYNONYMS.get(key, key if key else "worldwide")
 
     async def _fetch_trends(self, region_slug: str) -> List[Dict[str, Any]]:
-        url = f"{self.BASE_URL}/" if region_slug in ("world", "worldwide", "") else f"{self.BASE_URL}/{region_slug}/"
-        timeout = httpx.Timeout(10.0, connect=5.0)
-        async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": "Mozilla/5.0 (WhatsAppBot TrendsFetcher)"}) as client:
+        """Fetch and parse trends from trends24.in.
+        
+        Uses multiple parsing strategies for robustness.
+        
+        Args:
+            region_slug: Normalized region slug
+            
+        Returns:
+            List of trend dicts with name and url
+        """
+        url = (
+            f"{self.BASE_URL}/" if region_slug in ("world", "worldwide", "")
+            else f"{self.BASE_URL}/{region_slug}/"
+        )
+        timeout = httpx.Timeout(HTTP_TIMEOUT_SECONDS, connect=HTTP_CONNECT_TIMEOUT)
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            headers={"User-Agent": "Mozilla/5.0 (WhatsAppBot TrendsFetcher)"}
+        ) as client:
             r = await client.get(url)
             r.raise_for_status()
             html = r.text
@@ -118,11 +171,12 @@ class TrendsFunction(FunctionBase):
 
         trends: List[Dict[str, Any]] = []
 
-        # Primary strategy: first trend-card list
         try:
             card = soup.find("div", class_="trend-card")
             if card:
-                trend_list = card.find("ol", class_="trend-card__list") or card.find("ol")
+                trend_list = (
+                    card.find("ol", class_="trend-card__list") or card.find("ol")
+                )
                 if trend_list:
                     for li in trend_list.find_all("li"):
                         a = li.find("a")
@@ -133,13 +187,16 @@ class TrendsFunction(FunctionBase):
                             continue
                         link = a.get("href")
                         if link and link.startswith("/"):
-                            link = f"https://twitter.com{link}" if "/search?q=" in link else f"{self.BASE_URL}{link}"
+                            link = (
+                                f"https://twitter.com{link}"
+                                if "/search?q=" in link
+                                else f"{self.BASE_URL}{link}"
+                            )
                         trends.append({"name": name, "url": link})
-        except Exception as e:  # pragma: no cover
-            logger.debug(f"Primary trends parse failed: {e}")
+        except Exception as e:
+            logger.debug("Primary trends parse failed: %s", e)
 
-        # Fallback: any ol.trend-card__list on page (pick first with >=5 items)
-        if len(trends) < 3:
+        if len(trends) < MIN_TRENDS_COUNT:
             for ol in soup.find_all("ol", class_="trend-card__list"):
                 cand = []
                 for li in ol.find_all("li"):
@@ -151,34 +208,50 @@ class TrendsFunction(FunctionBase):
                         continue
                     link = a.get("href")
                     if link and link.startswith("/"):
-                        link = f"https://twitter.com{link}" if "/search?q=" in link else f"{self.BASE_URL}{link}"
+                        link = (
+                            f"https://twitter.com{link}"
+                            if "/search?q=" in link
+                            else f"{self.BASE_URL}{link}"
+                        )
                     cand.append({"name": name, "url": link})
-                if len(cand) >= 3:
+                if len(cand) >= MIN_TRENDS_COUNT:
                     trends = cand
                     break
 
-        # Last resort: collect any anchors with hashtag or leading # text
-        if len(trends) < 3:
+        if len(trends) < MIN_TRENDS_COUNT:
             seen = set()
             for a in soup.find_all('a'):
                 txt = a.get_text(strip=True)
-                if not txt or len(txt) > 80:
+                if not txt or len(txt) > MAX_TREND_NAME_LENGTH:
                     continue
                 if txt.startswith('#') and txt.lower() not in seen:
                     link = a.get('href')
                     if link and link.startswith('/'):
-                        link = f"https://twitter.com{link}" if "/search?q=" in link else f"{self.BASE_URL}{link}"
+                        link = (
+                            f"https://twitter.com{link}"
+                            if "/search?q=" in link
+                            else f"{self.BASE_URL}{link}"
+                        )
                     trends.append({"name": txt, "url": link})
                     seen.add(txt.lower())
-                if len(trends) >= 10:
+                if len(trends) >= FALLBACK_HASHTAG_LIMIT:
                     break
 
-        logger.debug(f"Parsed {len(trends)} trends from {url}")
+        logger.debug("Parsed %d trends from %s", len(trends), url)
         return trends
 
-    def _format_response(self, result: Dict[str, Any]) -> str:
+    @staticmethod
+    def _format_response(result: Dict[str, Any]) -> str:
+        """Format trends result into readable message.
+        
+        Args:
+            result: Dict with region, count, and trends list
+            
+        Returns:
+            Formatted message with numbered trends
+        """
         lines = [f"📈 X Trends: {result['region']} ({result['count']})"]
         for idx, t in enumerate(result['trends'], 1):
             lines.append(f"{idx}. {t['name']}")
-        lines.append("\nFuente: trends24.in (no oficial)")
+        lines.append("\nSource: trends24.in (unofficial)")
         return "\n".join(lines)

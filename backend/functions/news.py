@@ -1,25 +1,36 @@
-"""
-News function to get latest news from Reddit Argentina RSS feed.
+"""News function to get latest news from Reddit Argentina RSS feed.
+
+Fetches and parses RSS feed from Reddit Argentina, extracting
+titles, authors, and links with clean formatting.
 """
 
-import httpx
 import logging
-from typing import Dict, Any
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
-import re
+from typing import Any, Dict
+
+import httpx
 
 from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
+RSS_TIMEOUT_SECONDS = 10.0
+MAX_NEWS_ITEMS = 10
+MAX_SUMMARY_LENGTH = 200
+ATOM_NAMESPACE = {'atom': 'http://www.w3.org/2005/Atom'}
+
 
 @bot_function("news")
 class NewsFunction(FunctionBase):
-    """Get latest news from Reddit Argentina RSS feed."""
+    """Get latest news from Reddit Argentina RSS feed.
+    
+    Provides top posts from r/argentina with titles, authors, and links.
+    """
     
     def __init__(self):
-        """Initialize the News function."""
+        """Initialize the news function with Reddit RSS endpoint."""
         super().__init__(
             name="news",
             description="Get the latest news from Reddit Argentina",
@@ -45,48 +56,66 @@ class NewsFunction(FunctionBase):
         self.rss_url = "https://www.reddit.com/r/argentina/.rss"
     
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        Execute the news function.
+        """Execute the news function.
         
         Args:
-            **kwargs: Function parameters (none needed)
+            **kwargs: Function parameters (none required)
             
         Returns:
-            Latest news from Reddit Argentina
+            Dict with news entries and formatted message
         """
         try:
             logger.info("Fetching latest news from Reddit Argentina")
             
-            # Fetch RSS feed
             async with httpx.AsyncClient(follow_redirects=True) as client:
-                response = await client.get(self.rss_url, timeout=10.0)
+                response = await client.get(
+                    self.rss_url,
+                    timeout=RSS_TIMEOUT_SECONDS
+                )
                 response.raise_for_status()
                 
-                # Parse XML
                 root = ET.fromstring(response.content)
                 
-                # Extract entries
                 entries = []
-                ns = {'atom': 'http://www.w3.org/2005/Atom'}
                 
-                for entry in root.findall('.//atom:entry', ns)[:10]:  # Get top 10
+                for entry in root.findall(
+                    './/atom:entry', ATOM_NAMESPACE
+                )[:MAX_NEWS_ITEMS]:
                     try:
-                        title = entry.find('atom:title', ns).text if entry.find('atom:title', ns) is not None else "Sin título"
-                        link = entry.find('atom:link', ns).get('href') if entry.find('atom:link', ns) is not None else ""
-                        published = entry.find('atom:published', ns).text if entry.find('atom:published', ns) is not None else ""
-                        author_elem = entry.find('atom:author/atom:name', ns)
-                        author = author_elem.text if author_elem is not None else "Anónimo"
-                        content_elem = entry.find('atom:content', ns)
-                        content = content_elem.text if content_elem is not None else ""
+                        title_elem = entry.find('atom:title', ATOM_NAMESPACE)
+                        title = (
+                            title_elem.text if title_elem is not None
+                            else "No title"
+                        )
                         
-                        # Clean up author name
+                        link_elem = entry.find('atom:link', ATOM_NAMESPACE)
+                        link = (
+                            link_elem.get('href') if link_elem is not None
+                            else ""
+                        )
+                        
+                        pub_elem = entry.find('atom:published', ATOM_NAMESPACE)
+                        published = (
+                            pub_elem.text if pub_elem is not None else ""
+                        )
+                        
+                        author_elem = entry.find(
+                            'atom:author/atom:name', ATOM_NAMESPACE
+                        )
+                        author = (
+                            author_elem.text if author_elem is not None
+                            else "Anonymous"
+                        )
+                        
+                        content_elem = entry.find('atom:content', ATOM_NAMESPACE)
+                        content = (
+                            content_elem.text if content_elem is not None else ""
+                        )
+                        
                         if author.startswith('/u/'):
                             author = author[3:]
                         
-                        # Extract summary from content (remove HTML)
                         summary = self._extract_summary(content)
-                        
-                        # Format date
                         formatted_date = self._format_date(published)
                         
                         entries.append({
@@ -98,13 +127,12 @@ class NewsFunction(FunctionBase):
                         })
                         
                     except Exception as e:
-                        logger.warning(f"Error parsing entry: {e}")
+                        logger.warning("Error parsing entry: %s", e)
                         continue
                 
                 if not entries:
-                    return self.format_error_response("No se pudieron obtener noticias")
+                    return self.format_error_response("Could not fetch news")
                 
-                # Format response
                 response_text = self._format_news_response(entries)
                 
                 return self.format_success_response(
@@ -114,60 +142,80 @@ class NewsFunction(FunctionBase):
                 
         except httpx.TimeoutException:
             logger.error("Timeout fetching news")
-            return self.format_error_response("Timeout al obtener noticias. Intenta nuevamente.")
+            return self.format_error_response(
+                "Timeout fetching news. Try again."
+            )
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error fetching news: {e}")
-            return self.format_error_response(f"Error HTTP al obtener noticias: {e.response.status_code}")
+            logger.error("HTTP error fetching news: %s", e)
+            return self.format_error_response(
+                f"HTTP error fetching news: {e.response.status_code}"
+            )
         except ET.ParseError as e:
-            logger.error(f"XML parse error: {e}")
-            return self.format_error_response("Error al procesar el feed de noticias")
+            logger.error("XML parse error: %s", e)
+            return self.format_error_response("Error processing news feed")
         except Exception as e:
-            logger.error(f"Error in news function: {str(e)}")
-            return self.format_error_response(f"Error al obtener noticias: {str(e)}")
+            logger.error("Error in news function: %s", str(e))
+            return self.format_error_response(f"Error fetching news: {str(e)}")
     
-    def _extract_summary(self, content: str) -> str:
-        """Extract a clean summary from HTML content."""
+    @staticmethod
+    def _extract_summary(content: str) -> str:
+        """Extract clean summary from HTML content.
+        
+        Args:
+            content: HTML content string
+            
+        Returns:
+            Cleaned and truncated summary text
+        """
         if not content:
-            return "Sin resumen disponible"
+            return "No summary available"
         
-        # Remove HTML tags
         clean_content = re.sub(r'<[^>]+>', '', content)
-        
-        # Remove extra whitespace and newlines
         clean_content = re.sub(r'\s+', ' ', clean_content).strip()
-        
-        # Remove Reddit-specific text patterns
-        clean_content = re.sub(r'submitted by.*?\[link\].*?\[comments\]', '', clean_content)
+        clean_content = re.sub(
+            r'submitted by.*?\[link\].*?\[comments\]', '', clean_content
+        )
         clean_content = re.sub(r'&#32;', ' ', clean_content)
         
-        # Truncate to reasonable length
-        if len(clean_content) > 200:
-            clean_content = clean_content[:200] + "..."
+        if len(clean_content) > MAX_SUMMARY_LENGTH:
+            clean_content = clean_content[:MAX_SUMMARY_LENGTH] + "..."
         
-        return clean_content or "Sin resumen disponible"
+        return clean_content or "No summary available"
     
-    def _format_date(self, date_str: str) -> str:
-        """Format date string to a readable format."""
+    @staticmethod
+    def _format_date(date_str: str) -> str:
+        """Format ISO date string to readable format.
+        
+        Args:
+            date_str: ISO 8601 date string
+            
+        Returns:
+            Formatted date string (DD/MM/YYYY HH:MM)
+        """
         try:
-            # Parse ISO format
             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            # Format to Argentine locale style
             return dt.strftime('%d/%m/%Y %H:%M')
         except Exception:
             return date_str
     
-    def _format_news_response(self, entries: list) -> str:
-        """Format the news entries into a readable message."""
-        response = "📰 *Últimas noticias de Reddit Argentina*\n\n"
+    @staticmethod
+    def _format_news_response(entries: list) -> str:
+        """Format news entries into readable message.
+        
+        Args:
+            entries: List of news entry dicts
+            
+        Returns:
+            Formatted message with news items
+        """
+        response = "📰 *Latest News from Reddit Argentina*\n\n"
         
         for i, entry in enumerate(entries, 1):
             response += f"*{i}. {entry['title']}*\n"
-            
             response += f"🔗 {entry['link']}\n\n"
             
-            # Add separator except for last item
             if i < len(entries):
                 response += "─" * 3 + "\n\n"
         
-        response += "🇦🇷 *Fuente: Reddit Argentina*"
+        response += "🇦🇷 *Source: Reddit Argentina*"
         return response

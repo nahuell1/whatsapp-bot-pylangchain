@@ -1,24 +1,39 @@
 /**
- * Message Processor
- * Handles message extraction and preprocessing
+ * Message Processor Module
+ * 
+ * Handles extraction and preprocessing of WhatsApp messages.
+ * Supports text, image, audio, video, document, location, contact, and sticker messages.
+ * 
+ * @module message-processor
  */
 
 const logger = require('./utils/logger');
 
+// Message type constants
+const MESSAGE_TYPES = {
+    TEXT: 'text',
+    IMAGE: 'image',
+    AUDIO: 'audio',
+    VIDEO: 'video',
+    DOCUMENT: 'document',
+    LOCATION: 'location',
+    CONTACT: 'vcard',
+    STICKER: 'sticker'
+};
+
+/**
+ * Message processor class for extracting and formatting message information
+ */
 class MessageProcessor {
     constructor() {
-        this.messageTypes = {
-            TEXT: 'text',
-            IMAGE: 'image',
-            AUDIO: 'audio',
-            VIDEO: 'video',
-            DOCUMENT: 'document',
-            LOCATION: 'location',
-            CONTACT: 'vcard',
-            STICKER: 'sticker'
-        };
+        this.messageTypes = MESSAGE_TYPES;
     }
 
+    /**
+     * Extract message information from WhatsApp message
+     * @param {Message} message - WhatsApp message object
+     * @returns {Promise<Object>} Extracted message information
+     */
     async extractMessageInfo(message) {
         try {
             const contact = await message.getContact();
@@ -36,7 +51,6 @@ class MessageProcessor {
                 name: chat.name
             });
             
-            // Extract basic message info
             const messageInfo = {
                 message: message.body || '',
                 user_id: contact.id.user,
@@ -48,10 +62,8 @@ class MessageProcessor {
             
             logger.debug('Initial messageInfo:', messageInfo);
 
-            // Handle different message types
             switch (messageInfo.message_type) {
                 case this.messageTypes.TEXT:
-                    // Text message is already in message.body
                     break;
                 
                 case this.messageTypes.IMAGE:
@@ -86,7 +98,6 @@ class MessageProcessor {
                     messageInfo.message = message.body || 'Unsupported message type';
             }
 
-            // Add user context
             messageInfo.user_context = {
                 name: contact.name || contact.pushname || 'Unknown',
                 phone: contact.number,
@@ -100,7 +111,6 @@ class MessageProcessor {
         } catch (error) {
             logger.error('Error extracting message info:', error);
             
-            // Return basic fallback info
             return {
                 message: message.body || 'Error processing message',
                 user_id: 'unknown',
@@ -118,6 +128,11 @@ class MessageProcessor {
         }
     }
 
+    /**
+     * Determine message type from WhatsApp message
+     * @param {Message} message - WhatsApp message object
+     * @returns {string} Message type
+     */
     getMessageType(message) {
         if (message.hasMedia) {
             return message.type;
@@ -130,103 +145,123 @@ class MessageProcessor {
         }
     }
 
+    /**
+     * Handle image message
+     * @param {Message} message - WhatsApp message with image
+     * @returns {Promise<string>} Image description
+     */
     async handleImageMessage(message) {
         try {
-            const media = await message.downloadMedia();
-            
-            // For now, just return a description
-            // In the future, we could integrate with image recognition
+            await message.downloadMedia();
             const caption = message.body || '';
             return `[Image received${caption ? `: ${caption}` : ''}] - Image processing not implemented yet`;
-            
         } catch (error) {
             logger.error('Error handling image message:', error);
             return '[Image received but could not be processed]';
         }
     }
 
+    /**
+     * Handle audio message
+     * @param {Message} message - WhatsApp message with audio
+     * @returns {Promise<string>} Audio description
+     */
     async handleAudioMessage(message) {
         try {
-            // For now, just return a description
-            // In the future, we could integrate with speech-to-text
             return '[Audio message received] - Audio processing not implemented yet';
-            
         } catch (error) {
             logger.error('Error handling audio message:', error);
             return '[Audio message received but could not be processed]';
         }
     }
 
+    /**
+     * Handle video message
+     * @param {Message} message - WhatsApp message with video
+     * @returns {Promise<string>} Video description
+     */
     async handleVideoMessage(message) {
         try {
             const caption = message.body || '';
             return `[Video received${caption ? `: ${caption}` : ''}] - Video processing not implemented yet`;
-            
         } catch (error) {
             logger.error('Error handling video message:', error);
             return '[Video received but could not be processed]';
         }
     }
 
+    /**
+     * Handle document message
+     * @param {Message} message - WhatsApp message with document
+     * @returns {Promise<string>} Document description
+     */
     async handleDocumentMessage(message) {
         try {
             const media = await message.downloadMedia();
             const filename = media.filename || 'document';
-            
             return `[Document received: ${filename}] - Document processing not implemented yet`;
-            
         } catch (error) {
             logger.error('Error handling document message:', error);
             return '[Document received but could not be processed]';
         }
     }
 
+    /**
+     * Handle location message
+     * @param {Message} message - WhatsApp message with location
+     * @returns {Promise<string>} Location description
+     */
     async handleLocationMessage(message) {
         try {
             const location = message.location;
             return `[Location shared: ${location.latitude}, ${location.longitude}] - Location: ${location.description || 'No description'}`;
-            
         } catch (error) {
             logger.error('Error handling location message:', error);
             return '[Location shared but could not be processed]';
         }
     }
 
+    /**
+     * Handle contact message
+     * @param {Message} message - WhatsApp message with contact
+     * @returns {Promise<string>} Contact description
+     */
     async handleContactMessage(message) {
         try {
             const contact = message.vCards[0];
             const name = contact.split('\\n').find(line => line.startsWith('FN:'))?.substring(3) || 'Unknown';
-            
             return `[Contact shared: ${name}] - Contact processing not implemented yet`;
-            
         } catch (error) {
             logger.error('Error handling contact message:', error);
             return '[Contact shared but could not be processed]';
         }
     }
 
+    /**
+     * Handle sticker message
+     * @param {Message} message - WhatsApp message with sticker
+     * @returns {Promise<string>} Sticker description
+     */
     async handleStickerMessage(message) {
         try {
             return '[Sticker received] - Sticker processing not implemented yet';
-            
         } catch (error) {
             logger.error('Error handling sticker message:', error);
             return '[Sticker received but could not be processed]';
         }
     }
 
+    /**
+     * Preprocess and clean message text
+     * @param {string} message - Raw message text
+     * @returns {string} Cleaned message
+     */
     preprocessMessage(message) {
-        // Clean up the message
         let cleanMessage = message.trim();
-        
-        // Remove excessive whitespace
         cleanMessage = cleanMessage.replace(/\\s+/g, ' ');
-        
-        // Remove some common WhatsApp formatting
-        cleanMessage = cleanMessage.replace(/\\*([^*]+)\\*/g, '$1'); // Remove *bold*
-        cleanMessage = cleanMessage.replace(/_([^_]+)_/g, '$1'); // Remove _italic_
-        cleanMessage = cleanMessage.replace(/~([^~]+)~/g, '$1'); // Remove ~strikethrough~
-        
+        cleanMessage = cleanMessage.replace(/\\*([^*]+)\\*/g, '$1');
+        cleanMessage = cleanMessage.replace(/_([^_]+)_/g, '$1');
+        cleanMessage = cleanMessage.replace(/~([^~]+)~/g, '$1');
         return cleanMessage;
     }
 }

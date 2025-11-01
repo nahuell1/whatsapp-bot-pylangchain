@@ -1,31 +1,46 @@
-"""
-System information function.
+"""System information function.
+
+Provides detailed system metrics including CPU, memory, disk, network,
+processes, and Raspberry Pi specific information.
 """
 
-import platform
-import psutil
-import os
 import logging
-import subprocess
+import os
+import platform
 import shutil
-from pathlib import Path
-from typing import Dict, Any
+import subprocess
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import psutil
 
 from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
+TOP_PROCESSES_LIMIT = 10
+TOP_PROCESSES_BRIEF = 5
+TEMP_SCALE_THRESHOLD = 1000
+MILLIDEGREES_TO_CELSIUS = 1000.0
+
 
 @bot_function("system_info")
 class SystemInfoFunction(FunctionBase):
-    """Get system information."""
+    """Get system information including CPU, memory, disk, and RPi metrics.
+    
+    Provides comprehensive system monitoring with support for Raspberry Pi
+    specific metrics like temperature and throttling status.
+    """
     
     def __init__(self):
-        """Initialize the system info function."""
+        """Initialize the system info function with supported info types."""
         super().__init__(
             name="system_info",
-        description="Get system information including CPU, memory, disk usage, temperature (Raspberry Pi), and more",
+            description=(
+                "Get system information including CPU, memory, disk usage, "
+                "temperature (Raspberry Pi), and more"
+            ),
             parameters={
                 "info_type": {
                     "type": "string",

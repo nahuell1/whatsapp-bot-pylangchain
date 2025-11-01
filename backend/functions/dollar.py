@@ -1,23 +1,32 @@
-"""
-Dollar price function to get current USD exchange rates from DolarAPI.
+"""Dollar price function to get current USD exchange rates from DolarAPI.
+
+Fetches real-time USD exchange rates for Argentina including official,
+blue, and other market rates.
 """
 
-import httpx
 import logging
-from typing import Dict, Any
 from datetime import datetime
+from typing import Any, Dict
+
+import httpx
 
 from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
 
+API_TIMEOUT_SECONDS = 10.0
+
 
 @bot_function("dollar")
 class DollarFunction(FunctionBase):
-    """Get current USD exchange rates from DolarAPI."""
+    """Get current USD exchange rates from DolarAPI.
+    
+    Provides official, blue, crypto, and card exchange rates for
+    Argentina with real-time updates.
+    """
     
     def __init__(self):
-        """Initialize the Dollar function."""
+        """Initialize the dollar function with DolarAPI endpoint."""
         super().__init__(
             name="dollar",
             description="Get current USD exchange rates in Argentina",
@@ -45,30 +54,31 @@ class DollarFunction(FunctionBase):
         self.api_url = "https://dolarapi.com/v1/dolares"
     
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        Execute the dollar function.
+        """Execute the dollar function.
         
         Args:
-            **kwargs: Function parameters (none needed)
+            **kwargs: Function parameters (none required)
             
         Returns:
-            Current USD exchange rates
+            Dict with exchange rates and formatted message
         """
         try:
             logger.info("Fetching current USD exchange rates from DolarAPI")
             
-            # Fetch dollar prices
             async with httpx.AsyncClient(follow_redirects=True) as client:
-                response = await client.get(self.api_url, timeout=10.0)
+                response = await client.get(
+                    self.api_url,
+                    timeout=API_TIMEOUT_SECONDS
+                )
                 response.raise_for_status()
                 
-                # Parse JSON response
                 dollar_data = response.json()
                 
                 if not dollar_data:
-                    return self.format_error_response("No se pudieron obtener los precios del dólar")
+                    return self.format_error_response(
+                        "Could not fetch dollar prices"
+                    )
                 
-                # Format response
                 response_text = self._format_dollar_response(dollar_data)
                 
                 return self.format_success_response(
@@ -78,39 +88,55 @@ class DollarFunction(FunctionBase):
                 
         except httpx.TimeoutException:
             logger.error("Timeout fetching dollar prices")
-            return self.format_error_response("Timeout al obtener precios del dólar. Intenta nuevamente.")
+            return self.format_error_response(
+                "Timeout fetching dollar prices. Try again."
+            )
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error fetching dollar prices: {e}")
-            return self.format_error_response(f"Error HTTP al obtener precios del dólar: {e.response.status_code}")
+            logger.error("HTTP error fetching dollar prices: %s", e)
+            return self.format_error_response(
+                f"HTTP error fetching dollar prices: {e.response.status_code}"
+            )
         except Exception as e:
-            logger.error(f"Error in dollar function: {str(e)}")
-            return self.format_error_response(f"Error al obtener precios del dólar: {str(e)}")
+            logger.error("Error in dollar function: %s", str(e))
+            return self.format_error_response(
+                f"Error fetching dollar prices: {str(e)}"
+            )
     
-    def _format_date(self, date_str: str) -> str:
-        """Format date string to a readable format."""
+    @staticmethod
+    def _format_date(date_str: str) -> str:
+        """Format ISO date string to readable format.
+        
+        Args:
+            date_str: ISO 8601 date string
+            
+        Returns:
+            Formatted date string (DD/MM/YYYY HH:MM)
+        """
         try:
-            # Parse ISO format
             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            # Format to Argentine locale style
             return dt.strftime('%d/%m/%Y %H:%M')
         except Exception:
             return date_str
     
     def _format_dollar_response(self, dollar_data: list) -> str:
-        """Format the dollar rates into a readable message."""
-        response = "💵 *Precios del Dólar en Argentina 🇦🇷*\n\n"
+        """Format dollar rates into a readable message.
         
-        # Find oficial rate for comparison
+        Args:
+            dollar_data: List of exchange rate dicts
+            
+        Returns:
+            Formatted message with rates and comparisons
+        """
+        response = "💵 *Dollar Prices in Argentina 🇦🇷*\n\n"
+        
         oficial_rate = None
         for rate in dollar_data:
             if rate.get('casa') == 'oficial':
                 oficial_rate = rate
                 break
         
-        # Sort by importance (put most common ones first)
         priority_order = ['oficial', 'blue', 'cripto', 'tarjeta']
         
-        # Sort dollar_data based on priority_order
         sorted_data = []
         for priority in priority_order:
             for rate in dollar_data:
@@ -125,54 +151,65 @@ class DollarFunction(FunctionBase):
             venta = rate.get('venta', 0)
             fecha = rate.get('fechaActualizacion', '')
             
-            # Format numbers with thousands separator
             compra_formatted = f"${compra:,.2f}".replace(',', '.')
             venta_formatted = f"${venta:,.2f}".replace(',', '.')
             
-            # Add emoji based on type
             emoji = self._get_emoji_for_casa(casa)
             
-            # Calculate difference with oficial rate
             diff_text = ""
             if oficial_rate and casa != 'oficial':
-                diff_text = self._calculate_difference(venta, oficial_rate.get('venta', 0))
+                diff_text = self._calculate_difference(
+                    venta,
+                    oficial_rate.get('venta', 0)
+                )
             
             response += f"{emoji} *{nombre}*{diff_text}\n"
-            response += f"  💰 Compra: {compra_formatted}\n"
-            response += f"  💸 Venta: {venta_formatted}\n"
+            response += f"  💰 Buy: {compra_formatted}\n"
+            response += f"  💸 Sell: {venta_formatted}\n"
             
             if fecha:
                 formatted_date = self._format_date(fecha)
-                response += f"  🕐 Actualizado: {formatted_date}\n"
+                response += f"  🕐 Updated: {formatted_date}\n"
             
-            # Add separator except for last item
             if i < len(sorted_data) - 1:
                 response += "\n"
         return response
     
-    def _calculate_difference(self, current_price: float, oficial_price: float) -> str:
-        """Calculate difference with oficial rate."""
+    @staticmethod
+    def _calculate_difference(
+        current_price: float,
+        oficial_price: float
+    ) -> str:
+        """Calculate difference with official rate.
+        
+        Args:
+            current_price: Current rate price
+            oficial_price: Official rate price
+            
+        Returns:
+            Formatted difference string with absolute and percentage
+        """
         if oficial_price == 0:
             return ""
         
-        # Calculate absolute difference
         diff_amount = current_price - oficial_price
-        
-        # Calculate percentage difference
         diff_percentage = (diff_amount / oficial_price) * 100
         
-        # Format the difference
-        if diff_amount > 0:
-            sign = "+"
-            diff_formatted = f"${diff_amount:,.2f}".replace(',', '.')
-        else:
-            sign = ""
-            diff_formatted = f"${diff_amount:,.2f}".replace(',', '.')
+        sign = "+" if diff_amount > 0 else ""
+        diff_formatted = f"${diff_amount:,.2f}".replace(',', '.')
         
         return f" ({sign}{diff_formatted} / {diff_percentage:+.1f}%)"
     
-    def _get_emoji_for_casa(self, casa: str) -> str:
-        """Get appropriate emoji for each casa."""
+    @staticmethod
+    def _get_emoji_for_casa(casa: str) -> str:
+        """Get emoji for exchange house type.
+        
+        Args:
+            casa: Exchange house type identifier
+            
+        Returns:
+            Emoji representing the exchange house
+        """
         emoji_map = {
             'oficial': '🏛️',
             'blue': '🔵',

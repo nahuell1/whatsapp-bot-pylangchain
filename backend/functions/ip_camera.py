@@ -1,25 +1,34 @@
-"""
-IP Camera function for capturing and sending snapshots.
+"""IP Camera function for capturing and sending snapshots.
+
+Simple IP camera snapshot capture with authentication support
+and multiple response formats.
 """
 
-import httpx
 import base64
 import logging
-from typing import Dict, Any
-from io import BytesIO
+from typing import Any, Dict
 
-from functions.base import FunctionBase, bot_function
+import httpx
+
 from core.config import settings
+from functions.base import FunctionBase, bot_function
 
 logger = logging.getLogger(__name__)
+
+CAPTURE_TIMEOUT_SECONDS = 30.0
+BYTES_TO_KB = 1024
 
 
 @bot_function("ip_camera")
 class IPCameraFunction(FunctionBase):
-    """Capture and send IP camera snapshots."""
+    """Capture and send IP camera snapshots.
+    
+    Supports basic authentication and multiple response formats
+    (base64, URL, or description).
+    """
     
     def __init__(self):
-        """Initialize the IP camera function."""
+        """Initialize the IP camera function with configuration."""
         super().__init__(
             name="ip_camera",
             description="Capture and send IP camera snapshots",
@@ -56,17 +65,15 @@ class IPCameraFunction(FunctionBase):
         self.camera_password = settings.IP_CAMERA_PASSWORD
     
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        Execute the IP camera function.
+        """Execute the IP camera function.
         
         Args:
-            **kwargs: Function parameters
+            **kwargs: Function parameters (camera_name, camera_url, format)
             
         Returns:
-            Camera snapshot result
+            Dict with snapshot data and formatted message
         """
         try:
-            # Validate parameters
             params = self.validate_parameters(**kwargs)
             camera_name = params.get("camera_name", "IP Camera")
             camera_url = params.get("camera_url", self.default_camera_url)
@@ -77,17 +84,20 @@ class IPCameraFunction(FunctionBase):
                     "Camera URL must be configured or provided"
                 )
             
-            logger.info(f"Capturing snapshot from {camera_name}")
+            logger.info("Capturing snapshot from %s", camera_name)
             
-            # Capture snapshot
             snapshot_result = await self._capture_snapshot(camera_url)
             
             if not snapshot_result.get("success"):
-                return self.format_error_response(snapshot_result.get("error", "Failed to capture snapshot"))
+                return self.format_error_response(
+                    snapshot_result.get("error", "Failed to capture snapshot")
+                )
             
-            # Format response based on requested format
             if format_type == "base64":
-                response_message = f"📸 Snapshot captured from {camera_name} (base64 encoded)"
+                response_message = (
+                    f"📸 Snapshot captured from {camera_name} "
+                    "(base64 encoded)"
+                )
                 result_data = {
                     "camera_name": camera_name,
                     "image_base64": snapshot_result["image_base64"],
@@ -95,17 +105,22 @@ class IPCameraFunction(FunctionBase):
                     "timestamp": snapshot_result.get("timestamp")
                 }
             elif format_type == "url":
-                response_message = f"📸 Snapshot captured from {camera_name}\\nURL: {camera_url}"
+                response_message = (
+                    f"📸 Snapshot captured from {camera_name}\n"
+                    f"URL: {camera_url}"
+                )
                 result_data = {
                     "camera_name": camera_name,
                     "camera_url": camera_url,
                     "timestamp": snapshot_result.get("timestamp")
                 }
-            else:  # description
-                response_message = f"📸 Snapshot successfully captured from {camera_name}!"
+            else:
+                response_message = (
+                    f"📸 Snapshot successfully captured from {camera_name}!"
+                )
                 if snapshot_result.get("size"):
-                    size_kb = snapshot_result["size"] / 1024
-                    response_message += f"\\nImage size: {size_kb:.1f} KB"
+                    size_kb = snapshot_result["size"] / BYTES_TO_KB
+                    response_message += f"\nImage size: {size_kb:.1f} KB"
                 
                 result_data = {
                     "camera_name": camera_name,
@@ -116,23 +131,29 @@ class IPCameraFunction(FunctionBase):
             return self.format_success_response(result_data, response_message)
             
         except Exception as e:
-            logger.error(f"Error in IP camera function: {str(e)}")
+            logger.error("Error in IP camera function: %s", str(e))
             return self.format_error_response(str(e))
     
     async def _capture_snapshot(self, camera_url: str) -> Dict[str, Any]:
-        """Capture a snapshot from the camera."""
+        """Capture a snapshot from the camera.
+        
+        Args:
+            camera_url: URL to capture snapshot from
+            
+        Returns:
+            Dict with success status and snapshot data or error message
+        """
         try:
-            # Prepare authentication
             auth = None
             if self.camera_username and self.camera_password:
                 auth = (self.camera_username, self.camera_password)
             
-            # Capture snapshot
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(
+                timeout=CAPTURE_TIMEOUT_SECONDS
+            ) as client:
                 response = await client.get(camera_url, auth=auth)
                 response.raise_for_status()
                 
-                # Check if response is an image
                 content_type = response.headers.get("content-type", "")
                 if not content_type.startswith("image/"):
                     return {
@@ -140,9 +161,8 @@ class IPCameraFunction(FunctionBase):
                         "error": f"Response is not an image: {content_type}"
                     }
                 
-                # Get image data
                 image_data = response.content
-                image_base64 = base64.b64encode(image_data).decode("utf-8")
+                image_base64 = base64.b64encode(image_data).decode()
                 
                 return {
                     "success": True,
@@ -153,10 +173,13 @@ class IPCameraFunction(FunctionBase):
                 }
                 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error capturing snapshot: {e}")
+            logger.error("HTTP error capturing snapshot: %s", e)
             return {
                 "success": False,
-                "error": f"HTTP {e.response.status_code}: Failed to access camera"
+                "error": (
+                    f"HTTP {e.response.status_code}: "
+                    "Failed to access camera"
+                )
             }
         except httpx.TimeoutException:
             logger.error("Timeout capturing snapshot")
@@ -165,7 +188,7 @@ class IPCameraFunction(FunctionBase):
                 "error": "Camera request timed out"
             }
         except Exception as e:
-            logger.error(f"Error capturing snapshot: {str(e)}")
+            logger.error("Error capturing snapshot: %s", str(e))
             return {
                 "success": False,
                 "error": str(e)
